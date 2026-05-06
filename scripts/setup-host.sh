@@ -4,7 +4,7 @@ set -e
 usage() {
     echo "Usage: $0 <host> <user> [port] [identity-file]"
     echo ""
-    echo "Setup a remote host for opencode-remote by:"
+    echo "Setup a remote host for opencode-remote-ssh by:"
     echo "  1. Verifying SSH connectivity"
     echo "  2. Detecting platform and creating install directories"
     echo "  3. Uploading the Go stub binary"

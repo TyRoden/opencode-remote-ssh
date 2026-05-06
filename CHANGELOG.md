@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to opencode-remote will be documented in this file.
+All notable changes to opencode-remote-ssh will be documented in this file.
 
 ## [1.0.0] - 2025-05-05
 
@@ -11,7 +11,7 @@ All notable changes to opencode-remote will be documented in this file.
 - **Local SSH Tunnel**: Creates SSH port forwarding so the remote appears as a local endpoint
 - **Permission-First Security**: Path access is denied by default; approvals are requested through OpenCode's normal permission flow
 - **Persistent Approvals**: `always` approvals persist across stub restarts for the same workspace
-- **CLI Tool**: `opencode-remote-cli.sh` for easy host management and setup
+- **CLI Tool**: `opencode-remote-ssh-cli.sh` for easy host management and setup
 - **Workspace Adaptor Registration**: Plugin registers "ssh-provider" workspace type with OpenCode
 - **Custom Tools**: Remote execution tools (`remote-switch`, `remote-shell`, `remote-ls`, `remote-disconnect`) for direct control
 - **Idempotent Setup**: Prevents duplicate entries when running setup multiple times
@@ -24,7 +24,7 @@ All notable changes to opencode-remote will be documented in this file.
 - **Stub** (`stub/`): Go HTTP service installed on remote hosts
 - **Setup Scripts**:
   - `setup-host.sh`: SSH-based remote setup automation
-  - `opencode-remote-cli.sh`: CLI for managing hosts in OpenCode config
+  - `opencode-remote-ssh-cli.sh`: CLI for managing hosts in OpenCode config
   - `run-local-stub.sh`: Local stub testing helper
 
 ### Configuration

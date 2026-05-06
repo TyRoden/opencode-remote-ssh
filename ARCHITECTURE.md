@@ -2,7 +2,7 @@
 
 ## How It Works
 
-opencode-remote enables OpenCode to execute commands on remote Linux hosts that cannot run OpenCode directly. It works by:
+opencode-remote-ssh enables OpenCode to execute commands on remote Linux hosts that cannot run OpenCode directly. It works by:
 
 1. **Installing a small Go program (stub)** on the remote host
 2. **Creating an SSH tunnel** from your local machine to the remote
@@ -79,12 +79,12 @@ When you create a remote workspace:
 
 ## Remote Install Layout
 
-On each remote host, the stub installs under `~/.opencode-remote/`:
+On each remote host, the stub installs under `~/.opencode-remote-ssh/`:
 
 ```
-~/.opencode-remote/
+~/.opencode-remote-ssh/
 ├── bin/
-│   └── opencode-remote-stub   # The Go binary (your code runs here)
+│   └── opencode-remote-ssh-stub   # The Go binary (your code runs here)
 ├── run/
 │   ├── stub.token             # Authentication token
 │   └── stub.pid               # Process ID (optional)

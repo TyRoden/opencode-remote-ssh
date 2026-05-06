@@ -5,7 +5,7 @@ CONFIG_FILE="${HOME}/.config/opencode/opencode.json"
 PLUGIN_NAME="opencode-remote-provider"
 
 usage() {
-    echo "opencode-remote-cli - Manage remote hosts in OpenCode config"
+    echo "opencode-remote-ssh CLI - Manage remote hosts in OpenCode config"
     echo ""
     echo "Usage: $0 <command> [options]"
     echo ""

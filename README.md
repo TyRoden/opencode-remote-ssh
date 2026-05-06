@@ -1,4 +1,4 @@
-# opencode-remote
+# opencode-remote-ssh-ssh
 
 Provider-based remote workspace plugin and Go stub for using OpenCode against older Linux hosts (or those which cannot for one reason or another install Opencode) over SSH.
 
@@ -6,7 +6,7 @@ Provider-based remote workspace plugin and Go stub for using OpenCode against ol
 
 ## Overview
 
-opencode-remote enables OpenCode to work seamlessly with remote Linux hosts that cannot run OpenCode directly (e.g., older systems, minimal environments). It uses SSH for transport and a self-contained Go stub as the remote execution boundary.
+opencode-remote-ssh-ssh enables OpenCode to work seamlessly with remote Linux hosts that cannot run OpenCode directly (e.g., older systems, minimal environments). It uses SSH for transport and a self-contained Go stub as the remote execution boundary.
 
 ## Features
 
@@ -50,7 +50,7 @@ opencode-remote enables OpenCode to work seamlessly with remote Linux hosts that
 | Stub | `stub/` | Go HTTP service installed on remote hosts |
 | Setup Script | `scripts/setup-host.sh` | SSH-based remote setup automation |
 | Test Script | `scripts/run-local-stub.sh` | Local stub testing helper |
-| CLI Tool | `scripts/opencode-remote-cli.sh` | Manage hosts in OpenCode config |
+| CLI Tool | `scripts/opencode-remote-ssh-cli.sh` | Manage hosts in OpenCode config |
 
 ## Requirements
 
@@ -63,18 +63,18 @@ The easiest way to get started is using the CLI tool:
 
 ```bash
 # Add a host and set up the remote in one command
-./scripts/opencode-remote-cli.sh setup <host> <user> [port] [identity-file]
+./scripts/opencode-remote-ssh-cli.sh setup <host> <user> [port] [identity-file]
 
 # Example:
-./scripts/opencode-remote-cli.sh setup 10.0.0.10 ops 22 ~/.ssh/id_ed25519
+./scripts/opencode-remote-ssh-cli.sh setup 10.0.0.10 ops 22 ~/.ssh/id_ed25519
 ```
 
 This will:
 1. **Add the host** to your OpenCode config under a default provider
-2. **Create SSH key** (if no identity file provided): Generates a dedicated key `~/.ssh/opencode-remote-<hostname>`
+2. **Create SSH key** (if no identity file provided): Generates a dedicated key `~/.ssh/opencode-remote-ssh-<hostname>`
 3. **Transfer key** (if password provided): Adds the new key to the remote's `authorized_keys`
 4. **SSH to remote**: Connect using the new key
-5. **Upload stub**: Copy the Go binary to `~/.opencode-remote/bin/`
+5. **Upload stub**: Copy the Go binary to `~/.opencode-remote-ssh/bin/`
 6. **Generate token**: Create an authentication token on the remote
 7. **Start stub**: Launch the remote stub process
 8. **Create tunnel**: Set up SSH port forwarding to the remote
@@ -88,10 +88,10 @@ If this is your first time setting up a remote:
 ```bash
 # 1. Clone/download this repository
 # 2. Build the stub (if not pre-built)
-cd stub && go build -o bin/opencode-remote-stub ./cmd && cd ..
+cd stub && go build -o bin/opencode-remote-ssh-stub ./cmd && cd ..
 
 # 3. Run setup (it will create a new SSH key and transfer it)
-./scripts/opencode-remote-cli.sh setup <host-ip> <username>
+./scripts/opencode-remote-ssh-cli.sh setup <host-ip> <username>
 
 # The script will ask for your password ONCE to transfer the key
 # After that, key-based auth is used
@@ -110,7 +110,7 @@ If you run setup again:
 
 ```bash
 cd stub
-go build -o bin/opencode-remote-stub ./cmd
+go build -o bin/opencode-remote-ssh-stub ./cmd
 ```
 
 #### 2. Set Up a Remote Host
@@ -124,7 +124,7 @@ go build -o bin/opencode-remote-stub ./cmd
 
 The script will:
 1. Test SSH connectivity
-2. Create `~/.opencode-remote` directories on the remote
+2. Create `~/.opencode-remote-ssh` directories on the remote
 3. Upload the stub binary
 4. Generate an auth token
 5. Start the stub
@@ -137,7 +137,7 @@ Add the plugin configuration to your OpenCode config:
 ```json
 {
   "plugin": [
-    ["opencode-remote-provider", {
+    ["opencode-remote-ssh-provider", {
       "providers": {
         "my-servers": {
           "strategy": "first_available",
@@ -237,29 +237,29 @@ You can also use the custom tools directly:
 
 ## CLI Commands
 
-The `opencode-remote-cli.sh` script manages hosts in your OpenCode config:
+The `opencode-remote-ssh-cli.sh` script manages hosts in your OpenCode config:
 
 ```bash
 # Add a host to a provider
-./scripts/opencode-remote-cli.sh add <provider> <host> <user> [port] [identity-file]
+./scripts/opencode-remote-ssh-cli.sh add <provider> <host> <user> [port] [identity-file]
 # Example:
-./scripts/opencode-remote-cli.sh add prod-servers 10.0.0.10 ops 22 ~/.ssh/id_ed25519
+./scripts/opencode-remote-ssh-cli.sh add prod-servers 10.0.0.10 ops 22 ~/.ssh/id_ed25519
 
 # Remove a host from a provider
-./scripts/opencode-remote-cli.sh remove <provider> <host>
+./scripts/opencode-remote-ssh-cli.sh remove <provider> <host>
 # Example:
-./scripts/opencode-remote-cli.sh remove prod-servers 10.0.0.10
+./scripts/opencode-remote-ssh-cli.sh remove prod-servers 10.0.0.10
 
 # List all configured hosts
-./scripts/opencode-remote-cli.sh list
+./scripts/opencode-remote-ssh-cli.sh list
 
 # Initialize the plugin (usually done automatically)
-./scripts/opencode-remote-cli.sh init
+./scripts/opencode-remote-ssh-cli.sh init
 
 # Add host AND set up remote stub in one command
-./scripts/opencode-remote-cli.sh setup <host> <user> [port] [identity-file]
+./scripts/opencode-remote-ssh-cli.sh setup <host> <user> [port] [identity-file]
 # Example:
-./scripts/opencode-remote-cli.sh setup 10.0.0.10 ops 22 ~/.ssh/id_ed25519
+./scripts/opencode-remote-ssh-cli.sh setup 10.0.0.10 ops 22 ~/.ssh/id_ed25519
 ```
 
 **Note**: Each config modification automatically creates a timestamped backup at `~/.config/opencode/opencode.json.backup.YYYYMMDD_HHMMSS`.
@@ -271,8 +271,8 @@ The `opencode-remote-cli.sh` script manages hosts in your OpenCode config:
 ```json
 {
   "plugin": [
-    ["opencode-remote-provider", {
-      "installRoot": "~/.opencode-remote",
+    ["opencode-remote-ssh-provider", {
+      "installRoot": "~/.opencode-remote-ssh",
       "tunnel": {
         "localPortRange": [39000, 39999],
         "connectTimeoutMs": 15000,
@@ -311,7 +311,7 @@ The `opencode-remote-cli.sh` script manages hosts in your OpenCode config:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `installRoot` | string | `~/.opencode-remote` | Remote installation directory |
+| `installRoot` | string | `~/.opencode-remote-ssh` | Remote installation directory |
 | `tunnel.localPortRange` | `[number, number]` | `[39000, 39999]` | Local port allocation range |
 | `tunnel.connectTimeoutMs` | number | `15000` | SSH connection timeout |
 | `tunnel.healthTimeoutMs` | number | `5000` | Health check timeout |
@@ -360,7 +360,7 @@ printf '%s' "$(openssl rand -hex 24)" > /tmp/token
 mkdir -p /tmp/state/{workspaces,sessions,approvals}
 
 # Run stub
-./stub/bin/opencode-remote-stub \
+./stub/bin/opencode-remote-ssh-stub \
   --listen 127.0.0.1:39217 \
   --token-file /tmp/token \
   --state-dir /tmp/state \
@@ -392,12 +392,12 @@ curl -H "Authorization: Bearer $(cat /tmp/token)" \
 
 ## Remote Install Layout
 
-On the remote host, files are installed under `~/.opencode-remote/`:
+On the remote host, files are installed under `~/.opencode-remote-ssh/`:
 
 ```
-~/.opencode-remote/
+~/.opencode-remote-ssh/
 ├── bin/
-│   └── opencode-remote-stub     # The Go binary
+│   └── opencode-remote-ssh-stub     # The Go binary
 ├── run/
 │   ├── stub.token               # Auth token
 │   └── stub.pid                 # PID file (optional)
@@ -448,7 +448,7 @@ If the script fails with "Permission denied" when trying to connect:
 3. To add manually:
    ```bash
    # Show the public key
-   cat ~/.ssh/opencode-remote-<hostname>.pub
+   cat ~/.ssh/opencode-remote-ssh-<hostname>.pub
    
    # SSH to remote with your existing credentials
    # Add the public key to ~/.ssh/authorized_keys on the remote
@@ -458,24 +458,24 @@ If the script fails with "Permission denied" when trying to connect:
 
 Check the remote log:
 ```bash
-ssh -i ~/.ssh/opencode-remote-<hostname> user@host "cat ~/.opencode-remote/log/stub.log"
+ssh -i ~/.ssh/opencode-remote-ssh-<hostname> user@host "cat ~/.opencode-remote-ssh/log/stub.log"
 ```
 
 Common issues:
-- Binary may not have execute permission: `chmod +x ~/.opencode-remote/bin/opencode-remote-stub`
+- Binary may not have execute permission: `chmod +x ~/.opencode-remote-ssh/bin/opencode-remote-ssh-stub`
 - Port 39217 may already be in use on remote: check with `ss -tlnp | grep 39217`
 
 ### Connection Refused (after tunnel is active)
 
 1. Verify stub is running on remote:
    ```bash
-   ssh -i ~/.ssh/opencode-remote-<hostname> user@host "pgrep -la remote-stub"
+   ssh -i ~/.ssh/opencode-remote-ssh-<hostname> user@host "pgrep -la remote-stub"
    ```
 
 2. Check the token matches:
    ```bash
    # On local
-   ssh user@host "cat ~/.opencode-remote/run/stub.token"
+   ssh user@host "cat ~/.opencode-remote-ssh/run/stub.token"
    
    # Use that token in requests
    curl -H "Authorization: Bearer <token>" http://127.0.0.1:39300/global/health
@@ -483,7 +483,7 @@ Common issues:
 
 3. Ensure SSH tunnel is active:
    ```bash
-   ssh -i ~/.ssh/opencode-remote-<hostname> -N -L 39300:127.0.0.1:39217 user@host
+   ssh -i ~/.ssh/opencode-remote-ssh-<hostname> -N -L 39300:127.0.0.1:39217 user@host
    ```
 
 ### Permission Denied for Path Access
@@ -495,7 +495,7 @@ This is expected behavior - access is denied by default. When you attempt to acc
 
 To verify approvals exist:
 ```bash
-ssh user@host "ls ~/.opencode-remote/state/approvals/"
+ssh user@host "ls ~/.opencode-remote-ssh/state/approvals/"
 ```
 
 ### "No such file or directory" during SCP
@@ -527,18 +527,18 @@ If the stub stops running after you disconnect from SSH, you'll need to keep it 
 2. **Create a systemd service** on the remote:
    ```bash
    # On remote host
-sudo tee /etc/systemd/system/opencode-remote.service << 'EOF'
+sudo tee /etc/systemd/system/opencode-remote-ssh.service << 'EOF'
 [Unit]
 Description=OpenCode Remote Stub
 
 [Service]
 Type=simple
 User=<your-username>
-ExecStart=/home/<your-username>/.opencode-remote/bin/opencode-remote-stub \
+ExecStart=/home/<your-username>/.opencode-remote-ssh/bin/opencode-remote-ssh-stub \
   --listen 127.0.0.1:39217 \
-  --token-file /home/<your-username>/.opencode-remote/run/stub.token \
-  --state-dir /home/<your-username>/.opencode-remote/state \
-  --log-file /home/<your-username>/.opencode-remote/log/stub.log
+  --token-file /home/<your-username>/.opencode-remote-ssh/run/stub.token \
+  --state-dir /home/<your-username>/.opencode-remote-ssh/state \
+  --log-file /home/<your-username>/.opencode-remote-ssh/log/stub.log
 Restart=always
 
 [Install]
@@ -546,8 +546,8 @@ WantedBy=multi-user.target
 EOF
    
    sudo systemctl daemon-reload
-   sudo systemctl enable opencode-remote
-   sudo systemctl start opencode-remote
+   sudo systemctl enable opencode-remote-ssh
+   sudo systemctl start opencode-remote-ssh
    ```
 
 ## Manual Testing
@@ -556,10 +556,10 @@ Once setup is complete, you can test manually:
 
 ```bash
 # 1. Start SSH tunnel (keep this running)
-ssh -i ~/.ssh/opencode-remote-<hostname> -N -L 39300:127.0.0.1:39217 user@hostname
+ssh -i ~/.ssh/opencode-remote-ssh-<hostname> -N -L 39300:127.0.0.1:39217 user@hostname
 
 # 2. Get the token from remote
-TOKEN=$(ssh -i ~/.ssh/opencode-remote-<hostname> user@hostname 'cat ~/.opencode-remote/run/stub.token')
+TOKEN=$(ssh -i ~/.ssh/opencode-remote-ssh-<hostname> user@hostname 'cat ~/.opencode-remote-ssh/run/stub.token')
 
 # 3. Test health endpoint
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:39300/global/health
@@ -588,13 +588,13 @@ npm run build
 
 ```bash
 cd stub
-go build -o bin/opencode-remote-stub ./cmd
+go build -o bin/opencode-remote-ssh-stub ./cmd
 ```
 
 ### Project Structure
 
 ```
-opencode-remote/
+opencode-remote-ssh/
 ├── plugin/                 # OpenCode workspace adaptor
 │   ├── src/
 │   │   ├── index.ts       # Plugin entry point
