@@ -431,9 +431,7 @@ async execute(args, context) {
             let identityFile = "";
             
             if (config && config.providers && config.providers[providerName]) {
-              console.log("[remote-switch] Looking in provider:", providerName, "hosts:", config.providers[providerName].hosts?.map((h: any) => h.name));
               for (const h of config.providers[providerName].hosts) {
-                console.log("[remote-switch] Checking host:", h.name, "vs target:", targetHost);
                 if (h.name === targetHost || h.ssh.host === targetHost) {
                   hostConfig = h;
                   user = h.ssh.user;

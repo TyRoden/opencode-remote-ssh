@@ -63,7 +63,6 @@ export class SSHManager {
     await this.execSSH(sshArgs, startCmd);
     await this.sleep(3000);
 
-    console.error(`[SSH] Creating local tunnel...`);
     const tunnelCmd = `ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=10 -N -L ${localPort}:127.0.0.1:${remotePort} ${sshConfig.user}@${sshConfig.host}${identityFile ? ` -i ${identityFile}` : ""} -p ${sshConfig.port || 22}`;
 
     return {
