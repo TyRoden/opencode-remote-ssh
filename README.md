@@ -2,6 +2,8 @@
 
 Provider-based remote workspace plugin and Go stub for using OpenCode against older Linux hosts over SSH.
 
+![OpenCode Remote Workspace](docs/screenshot.png)
+
 ## Overview
 
 opencode-remote enables OpenCode to work seamlessly with remote Linux hosts that cannot run OpenCode directly (e.g., older systems, minimal environments). It uses SSH for transport and a self-contained Go stub as the remote execution boundary.
