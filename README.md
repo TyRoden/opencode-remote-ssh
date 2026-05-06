@@ -74,6 +74,43 @@ The easiest way to get started is using the CLI tool:
 ./scripts/opencode-remote-ssh-cli.sh setup 10.0.0.10 ops 22 ~/.ssh/id_ed25519
 ```
 
+## Important: Plugin Configuration Path
+
+When configuring the plugin in your OpenCode `opencode.json`, you must use **an absolute path to the plugin directory**, not an npm package name:
+
+```json
+{
+  "plugin": [
+    ["/absolute/path/to/opencode-remote/plugin", {
+      "providers": {
+        "my-servers": {
+          "hosts": [
+            {
+              "name": "prod-server",
+              "ssh": {
+                "host": "10.0.0.10",
+                "user": "ops",
+                "port": 22,
+                "identityFile": "~/.ssh/id_ed25519"
+              }
+            }
+          ]
+        }
+      }
+    }]
+  ]
+}
+```
+
+> **Important**: Replace `/absolute/path/to/opencode-remote/plugin` with the actual path where you cloned this repository.
+
+### Why the Path Instead of npm?
+
+The plugin is loaded directly from source to ensure:
+- Changes to the code take effect immediately
+- No npm publishing/publishing steps required
+- Full access to debug logs during development
+
 This will:
 1. **Add the host** to your OpenCode config under a default provider
 2. **Create SSH key** (if no identity file provided): Generates a dedicated key `~/.ssh/opencode-remote-ssh-<hostname>`
@@ -336,13 +373,48 @@ The `opencode-remote-ssh-cli.sh` script manages hosts in your OpenCode config:
 
 | Option | Type | Description |
 |--------|------|-------------|
-| `name` | string | Unique host identifier |
+| `name` | string | **Unique host identifier** - can be a descriptive name (e.g., "conference", "prod-web") |
 | `ssh.host` | string | Hostname or IP address |
 | `ssh.user` | string | SSH username |
 | `ssh.port` | number | SSH port (default: 22) |
 | `ssh.identityFile` | string | Path to SSH private key |
 | `ssh.proxyJump` | string | SSH jump host |
 | `labels` | string[] | Labels for filtering |
+
+### Using Host Names as Aliases
+
+You can use a **descriptive name** for each host in the `name` field (not just the IP). This allows you to connect using an easy-to-remember alias:
+
+```json
+{
+  "providers": {
+    "default": {
+      "hosts": [
+        {
+          "name": "conference",
+          "ssh": {
+            "host": "67.205.147.74",
+            "user": "root"
+          }
+        },
+        {
+          "name": "local-dev",
+          "ssh": {
+            "host": "192.168.50.94",
+            "user": "developer"
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+Then in OpenCode, you can say:
+- **"Switch to conference"** - connects to the host named "conference"
+- **"Switch to local-dev"** - connects to the host named "local-dev"
+
+The plugin automatically resolves the host name to the correct IP from your config.
 
 ## Local Testing
 

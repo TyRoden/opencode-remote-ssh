@@ -204,69 +204,6 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
           return JSON.stringify({ success: false, error: "Workspace not found" });
         },
       }),
-      "remote-connect-192-168-50-94": tool({
-        description: "Connect to 192.168.50.94 and return session/workspace for remote operations",
-        args: {},
-        async execute(args, context) {
-          try {
-            const host = "192.168.50.94";
-            const user = "troden";
-            const port = 22;
-            const identityFile = "/home/troden/.ssh/opencode-remote-192.168.50.94";
-            const localPort = 39502;
-            
-            const { exec } = await import('node:child_process');
-            const { promisify } = await import('node:util');
-            const execAsync = promisify(exec);
-            
-            // Get token
-            const tokenCmd = await execAsync(`ssh -i ${identityFile} -p ${port} ${user}@${host} "cat ~/.opencode-remote/run/stub.token"`, { timeout: 10000 });
-            const token = tokenCmd.stdout.trim();
-            
-            // Create workspace and session in the remote stub
-            const workspaceID = "ws_" + Date.now();
-            const workspaceRes = await fetch(`http://127.0.0.1:${localPort}/experimental/workspace`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: workspaceID, type: "ssh-provider", name: "remote-session" })
-            });
-            const workspace = await workspaceRes.json();
-            
-            // Create session
-            const sessionID = "sess_" + Date.now();
-            const sessionRes = await fetch(`http://127.0.0.1:${localPort}/session`, {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: sessionID, title: "Remote Session", workspaceID: workspaceID })
-            });
-            const session = await sessionRes.json();
-            
-            // Store in state for other tools to use
-            state.set({
-              workspaceID: workspaceID,
-              provider: "default",
-              host: host,
-              remotePort: 39217,
-              localPort: localPort,
-              token: token,
-              leaseMode: "exclusive",
-              status: "ready",
-              sessionID: sessionID
-            });
-            
-            return JSON.stringify({
-              success: true,
-              workspaceID: workspaceID,
-              sessionID: sessionID,
-              host: host,
-              localPort: localPort,
-              message: `Connected to ${user}@${host}. Session ${sessionID} ready. Use remote-shell or remote-bash to run commands.`
-            });
-          } catch (e: any) {
-            return JSON.stringify({ success: false, error: e.message });
-          }
-        },
-      }),
       "remote-shell": tool({
         description: "Run a shell command on the remote workspace",
         args: {
@@ -363,10 +300,10 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
           pattern: tool.schema.string().describe("Path pattern to approve (e.g., /home/troden/**)"),
           mode: tool.schema.string().optional().describe("Approval mode: once or always (default: always)"),
         },
-        async execute(args, context) {
+async execute(args, context) {
           const bindings = state.list();
           if (bindings.length === 0) {
-            return JSON.stringify({ success: false, error: "No active remote workspace." });
+            return JSON.stringify({ success: false, error: "No active remote workspace. Use 'remote-switch' with a host first." });
           }
           const binding = bindings[0];
           
@@ -401,7 +338,7 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
         async execute(args, context) {
           const bindings = state.list();
           if (bindings.length === 0) {
-            return JSON.stringify({ success: false, error: "No active remote workspace. Use remote-connect-192-168-50-94 first." });
+            return JSON.stringify({ success: false, error: "No active remote workspace. Use 'remote-switch' with a host first." });
           }
           const binding = bindings[0];
           const dir = args.path || "/home/troden";
@@ -436,33 +373,124 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
       "remote-switch": tool({
         description: "Switch to remote workspace - all operations will run on the remote host",
         args: {
-          host: tool.schema.string().optional().describe("Host to connect to (default: 192.168.50.94)"),
+          host: tool.schema.string().optional().describe("Host name or IP to connect to (e.g., 'conference' or '192.168.1.100')"),
+          provider: tool.schema.string().optional().describe("Provider name (default: default)"),
         },
         async execute(args, context) {
-          const targetHost = args.host || "192.168.50.94";
+          let targetHost = args.host?.toLowerCase() || "";
+          let providerName = (args.provider || "default").toLowerCase();
+          
+          // Build alias map from config hosts (host name -> SSH host)
+          const aliasMap: Record<string, string> = {};
+          if (config && config.providers) {
+            for (const [pName, pVal] of Object.entries(config.providers)) {
+              const provider = pVal as any;
+              if (provider.hosts) {
+                for (const h of provider.hosts) {
+                  // Map host name (alias) to SSH host IP
+                  if (h.name && h.ssh?.host) {
+                    aliasMap[h.name.toLowerCase()] = h.ssh.host;
+                  }
+                }
+              }
+            }
+          }
+          
+          // If targetHost is empty but providerName looks like a host name, use it as host
+          if (!targetHost && aliasMap[providerName]) {
+            targetHost = aliasMap[providerName];
+            providerName = "default";
+          }
+          
+          // If host was passed and it matches a host name alias, resolve it
+          if (targetHost && aliasMap[targetHost]) {
+            targetHost = aliasMap[targetHost];
+          }
+          
+          if (!targetHost) {
+            // Find first available host in provider
+            if (!config || !config.providers || !config.providers[providerName]) {
+              return JSON.stringify({ success: false, error: "No provider config found. Provide a host name or configure providers." });
+            }
+            const provider = config.providers[providerName];
+            if (!provider.hosts || provider.hosts.length === 0) {
+              return JSON.stringify({ success: false, error: `No hosts configured in provider '${providerName}'` });
+            }
+            const firstHost = provider.hosts[0];
+            return JSON.stringify({ 
+              success: false, 
+              error: "No host specified. Available hosts: " + provider.hosts.map((h: any) => h.name).join(", ") 
+            });
+          }
           
           try {
+            // Find host in config
+            let hostConfig: any = null;
+            let user = "root";
+            let port = 22;
+            let identityFile = "";
+            
+            if (config && config.providers && config.providers[providerName]) {
+              console.log("[remote-switch] Looking in provider:", providerName, "hosts:", config.providers[providerName].hosts?.map((h: any) => h.name));
+              for (const h of config.providers[providerName].hosts) {
+                console.log("[remote-switch] Checking host:", h.name, "vs target:", targetHost);
+                if (h.name === targetHost || h.ssh.host === targetHost) {
+                  hostConfig = h;
+                  user = h.ssh.user;
+                  port = h.ssh.port || 22;
+                  identityFile = h.ssh.identityFile || "";
+                  break;
+                }
+              }
+            }
+            
+            if (!hostConfig && targetHost.includes(".")) {
+              // Try direct IP
+              user = targetHost.includes("67.205") ? "root" : "troden";
+              port = 22;
+              identityFile = targetHost.includes("67.205") ? "/home/troden/.ssh/id_rsa_digitalocean" : "/home/troden/.ssh/opencode-remote-192.168.50.94";
+            }
+            
             const { exec } = await import('node:child_process');
             const { promisify } = await import('node:util');
             const execAsync = promisify(exec);
             
-            const user = "troden";
-            const port = 22;
-            const identityFile = "/home/troden/.ssh/opencode-remote-192.168.50.94";
-            
-            // Get remote token
-            const tokenCmd = await execAsync(`ssh -i ${identityFile} -p ${port} ${user}@${targetHost} "cat ~/.opencode-remote/run/stub.token"`, { timeout: 10000 });
+            // Get remote token via SSH
+            const tokenCmd = await execAsync(`ssh -i ${identityFile} -o ConnectTimeout=10 -p ${port} ${user}@${targetHost} "cat ~/.opencode-remote/run/stub.token"`, { timeout: 15000 });
             const token = tokenCmd.stdout.trim();
             
-            // Determine local port (use fixed for now)
-            const localPort = 39502;
+            // Find available local port
+            const localPort = 39500 + Math.floor(Math.random() * 100);
             
-            // Test connection
-            const testRes = await fetch(`http://127.0.0.1:${localPort}/global/health`, {
+            // Test if remote stub is already reachable
+            let testRes;
+            try {
+              testRes = await fetch(`http://127.0.0.1:${localPort}/global/health`, { 
+                headers: { 'Authorization': `Bearer ${token}` },
+                signal: AbortSignal.timeout(2000)
+              });
+            } catch {
+              testRes = null;
+            }
+            
+            // If not reachable, try to create tunnel (simplified - just check existing)
+            if (!testRes || !testRes.ok) {
+              // Check if there's an existing tunnel we can use
+              const { exec: exec2 } = await import('node:child_process');
+              const { promisify: prom2 } = await import('node:util');
+              const execAsync2 = prom2(exec2);
+              try {
+                await execAsync2(`ssh -i ${identityFile} -o ConnectTimeout=5 -N -L ${localPort}:127.0.0.1:39217 ${user}@${targetHost} -f`, { timeout: 5000 });
+              } catch {}
+              await new Promise(r => setTimeout(r, 1500));
+            }
+            
+            // Test connection again
+            testRes = await fetch(`http://127.0.0.1:${localPort}/global/health`, {
               headers: { 'Authorization': `Bearer ${token}` }
             });
             if (!testRes.ok) {
-              return JSON.stringify({ success: false, error: "Remote stub not responding" });
+              return JSON.stringify({ success: false, error: `Remote stub not responding on port ${localPort}. Is the stub running on the remote?` });
             }
             
             // Create workspace in remote stub
@@ -472,7 +500,6 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: workspaceID, type: "ssh-provider", name: "Remote Workspace", extra: { host: targetHost } })
             });
-            const wsData = await wsRes.json();
             
             // Create session in remote
             const sessionID = "sess_" + Date.now();
@@ -481,12 +508,11 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
               headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({ id: sessionID, title: "Remote Session", workspaceID: workspaceID })
             });
-            const sessData = await sessRes.json();
             
             // Store binding
             state.set({
               workspaceID: workspaceID,
-              provider: "default",
+              provider: providerName,
               host: targetHost,
               remotePort: 39217,
               localPort: localPort,
@@ -496,7 +522,6 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
               sessionID: sessionID
             });
             
-            // Return the remote target that OpenCode can use
             return JSON.stringify({
               success: true,
               type: "remote",
@@ -505,7 +530,7 @@ export default async function OpencodeRemotePlugin(input: PluginInput, options?:
               workspaceID: workspaceID,
               sessionID: sessionID,
               host: targetHost,
-              message: `SWITCHED TO REMOTE: ${user}@${targetHost}\nAll operations will now run on the remote. Use remote-disconnect to return to local.`
+              message: `SWITCHED TO REMOTE: ${user}@${targetHost}\nLocal port: ${localPort}\nAll operations will now run on the remote. Use remote-disconnect to return to local.`
             });
           } catch (e: any) {
             return JSON.stringify({ success: false, error: e.message });

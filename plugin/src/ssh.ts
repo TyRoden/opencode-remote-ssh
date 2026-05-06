@@ -1,11 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { spawn } from "node:child_process";
+import { spawn, exec } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { promisify } from "node:util";
 import type { ResolvedPluginConfig } from "./config.js";
 import type { ResolvedHost, WorkspaceBinding } from "./types.js";
 
-const execAsync = promisify(require("node:child_process").exec);
+const execAsync = promisify(exec);
 
 export interface BootstrapResult {
   remotePort: number;
