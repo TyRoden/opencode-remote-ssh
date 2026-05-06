@@ -22,15 +22,15 @@ opencode-remote-ssh enables OpenCode to work seamlessly with remote Linux hosts 
 
 ```
 ┌─────────────────┐      SSH + Tunnel      ┌─────────────────┐
-│   Local OpenCode│ ──────────────────────▶│   Remote Host    │
-│   + Plugin      │                        │   + Go Stub      │
+│   Local OpenCode│ ──────────────────────▶│   Remote Host   │
+│   + Plugin      │                        │   + Go Stub     │
 └─────────────────┘                        └─────────────────┘
         │                                          │
-        │ Workspace Adaptor                       │
-        │ - provider/host selection               │
-        │ - SSH bootstrap                         │
-        │ - tunnel management                     │
-        │ - target URL + headers                  │
+        │ Workspace Adaptor                        │
+        │ - provider/host selection                │
+        │ - SSH bootstrap                          │
+        │ - tunnel management                      │
+        │ - target URL + headers                   │
         │                                          │
         ▼                                          ▼
   ┌──────────┐                              ┌──────────────┐
@@ -56,6 +56,11 @@ opencode-remote-ssh enables OpenCode to work seamlessly with remote Linux hosts 
 
 - **Local**: OpenCode, Node.js (for plugin), Go 1.21+ (for stub build)
 - **Remote**: Linux (x86_64 or arm64), SSH access, any POSIX shell
+
+## Caution on remote sessions
+
+- **LLM Drift**: This plugin does not make your LLM smarter in any way. It can indeed lose its way and forget its working on a remote session.
+- **Always Verify**: It is a good practice to watch what the LLM is doing in any case- you can always escape twice in Opencode to stop anything if ever needed
 
 ## Quick Start (Recommended - Using CLI)
 
