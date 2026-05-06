@@ -6,7 +6,7 @@ Provider-based remote workspace plugin and Go stub for using OpenCode against ol
 
 ## Overview
 
-opencode-remote-ssh-ssh enables OpenCode to work seamlessly with remote Linux hosts that cannot run OpenCode directly (e.g., older systems, minimal environments). It uses SSH for transport and a self-contained Go stub as the remote execution boundary.
+opencode-remote-ssh enables OpenCode to work seamlessly with remote Linux hosts that cannot run OpenCode directly (e.g., older systems, minimal environments). It uses SSH for transport and a self-contained Go stub as the remote execution boundary.
 
 ## Features
 
