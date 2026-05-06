@@ -1,0 +1,44 @@
+{
+  "plugin": [
+    ["opencode-remote-provider", {
+      "installRoot": "~/.opencode-remote",
+      "tunnel": {
+        "localPortRange": [39000, 39999],
+        "connectTimeoutMs": 15000,
+        "healthTimeoutMs": 5000
+      },
+      "defaults": {
+        "selectionStrategy": "first_available",
+        "leaseMode": "exclusive",
+        "stubPort": 39217
+      },
+      "providers": {
+        "my-servers": {
+          "strategy": "first_available",
+          "labels": ["linux"],
+          "hosts": [
+            {
+              "name": "server-01",
+              "ssh": {
+                "host": "192.168.1.100",
+                "user": "admin",
+                "port": 22,
+                "identityFile": "~/.ssh/id_ed25519"
+              },
+              "labels": ["linux", "production", "x86_64"]
+            },
+            {
+              "name": "server-02",
+              "ssh": {
+                "host": "192.168.1.101",
+                "user": "admin",
+                "port": 22
+              },
+              "labels": ["linux", "staging", "arm64"]
+            }
+          ]
+        }
+      }
+    }]
+  ]
+}
