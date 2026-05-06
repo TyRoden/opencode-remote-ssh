@@ -1,4 +1,4 @@
-# opencode-remote-ssh-ssh
+# opencode-remote-ssh
 
 Provider-based remote workspace plugin and Go stub for using OpenCode against older Linux hosts (or those which cannot for one reason or another install Opencode) over SSH.
 
