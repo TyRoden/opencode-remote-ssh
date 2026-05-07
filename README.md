@@ -1,5 +1,7 @@
 # opencode-remote-ssh
 
+![OpenCode Remote Workspace](docs/screenshot.png)
+
 Provider-based remote workspace plugin and Go stub for using OpenCode against Linux hosts that cannot run OpenCode directly.
 
 ## Overview
