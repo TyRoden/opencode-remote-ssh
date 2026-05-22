@@ -12,6 +12,7 @@ export interface SSHConfig {
 
 export interface HostConfig {
   name: string;
+  aliases?: string[];
   ssh: SSHConfig;
   labels?: string[];
 }

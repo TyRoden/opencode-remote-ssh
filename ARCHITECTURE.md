@@ -19,7 +19,7 @@ The OpenCode plugin that runs on your local machine. It handles:
 | Responsibility | Description |
 |---------------|-------------|
 | **Provider Registry** | Maintains your list of remote hosts organized by groups |
-| **Host Selection** | Picks which remote to use based on labels and availability |
+| **Host Selection** | Picks which remote to use based on labels, availability, and optional host aliases |
 | **Lease Management** | Ensures only one workspace uses a host at a time |
 | **SSH Bootstrap** | Uploads and starts the remote stub |
 | **Tunnel Management** | Maintains the SSH port forwarding |
@@ -120,6 +120,13 @@ The stub is designed with security in mind:
 - **Default deny**: All file access is blocked until explicitly approved
 - **Symlink blocking**: Prevents escaping to arbitrary paths
 - **Approval persistence**: "Always" approvals are saved but workspace-specific
+
+## Recent Behavior Changes
+
+Two recent runtime behaviors are important when reasoning about the current system:
+
+1. **Host aliases**: a configured host can expose multiple friendly names through `aliases`, while still resolving to the same `ssh.host` target.
+2. **Detached remote startup**: `setup-host.sh` launches the stub in a separate session via Python `setsid` semantics so the process survives bootstrap SSH teardown more reliably on older Linux hosts.
 
 ## Why This Architecture?
 

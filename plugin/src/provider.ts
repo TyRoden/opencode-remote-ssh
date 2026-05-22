@@ -21,7 +21,10 @@ export class ProviderRegistry {
     }
 
     if (request.host) {
-      const host = provider.hosts.find((item) => item.name === request.host);
+      const requestedHost = request.host;
+      const host = provider.hosts.find(
+        (item) => item.name === requestedHost || item.aliases?.includes(requestedHost) === true,
+      );
       if (!host) {
         throw new Error(`Host '${request.host}' not found in provider '${request.provider}'`);
       }

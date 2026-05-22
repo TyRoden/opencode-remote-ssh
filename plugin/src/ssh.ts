@@ -6,6 +6,7 @@ import type { ResolvedPluginConfig } from "./config.js";
 import type { ResolvedHost, WorkspaceBinding } from "./types.js";
 
 const execFileAsync = promisify(execFile);
+const knownHostsFile = `${process.env.HOME ?? ""}/.ssh/known_hosts`;
 
 export interface BootstrapResult {
   remotePort: number;
@@ -80,7 +81,7 @@ export class SSHManager {
       "-o",
       "StrictHostKeyChecking=accept-new",
       "-o",
-      `UserKnownHostsFile=${process.env.HOME}/.ssh/known_hosts`,
+      `UserKnownHostsFile=${knownHostsFile}`,
       "-o",
       `ConnectTimeout=${Math.ceil(this.config.tunnel.connectTimeoutMs / 1000)}`,
       "-p",
@@ -124,7 +125,7 @@ export class SSHManager {
       "-o",
       "StrictHostKeyChecking=accept-new",
       "-o",
-      `UserKnownHostsFile=${process.env.HOME}/.ssh/known_hosts`,
+      `UserKnownHostsFile=${knownHostsFile}`,
       "-P",
       String(sshConfig.port || 22),
     ];
@@ -187,7 +188,7 @@ export class SSHManager {
       "-o",
       "StrictHostKeyChecking=accept-new",
       "-o",
-      `UserKnownHostsFile=${process.env.HOME}/.ssh/known_hosts`,
+      `UserKnownHostsFile=${knownHostsFile}`,
       "-p",
       String(sshConfig.port || 22),
       `${sshConfig.user}@${sshConfig.host}`,

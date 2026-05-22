@@ -2,6 +2,20 @@
 
 All notable changes to opencode-remote-ssh will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Added optional host `aliases` in provider configuration so a workspace target can resolve a host by either its canonical `name` or any configured alias.
+
+### Changed
+
+- Clarified the README, architecture notes, and test plan to document alias-based host resolution and the current detached remote stub startup behavior.
+
+### Fixed
+
+- Improved `setup-host.sh` remote stub startup by launching the stub in its own session and waiting slightly longer before validation, which reduces bootstrap failures on older Linux hosts where child processes can die when the SSH parent exits.
+
 ## [1.1.0] - 2026-05-06
 
 ### Changed

@@ -172,7 +172,7 @@ In that mode:
 
 ## Host Aliases
 
-Host aliases are configured through the `name` field and resolved to `ssh.host` at runtime.
+Each host may now define optional `aliases`, and workspace creation can target either the canonical `name` or any configured alias. The plugin still resolves the real network destination from `ssh.host` at runtime.
 
 Example:
 
@@ -183,6 +183,7 @@ Example:
       "hosts": [
         {
           "name": "protagmanager",
+          "aliases": ["protag", "tagmgr"],
           "ssh": {
             "host": "159.203.115.52",
             "user": "root",
@@ -192,6 +193,28 @@ Example:
         }
       ]
     }
+  }
+}
+```
+
+Any of these workspace targets now resolve to the same configured host:
+
+```json
+{
+  "type": "ssh-provider",
+  "extra": {
+    "provider": "default",
+    "host": "protagmanager"
+  }
+}
+```
+
+```json
+{
+  "type": "ssh-provider",
+  "extra": {
+    "provider": "default",
+    "host": "protag"
   }
 }
 ```
@@ -241,7 +264,7 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:39300/global/health
 1. Older hosts such as CentOS/RHEL 7 era systems may require a statically built stub binary.
 2. The current build/test flow for this repository uses `CGO_ENABLED=0` when targeting those older hosts.
 3. Some older hosts do not keep a backgrounded process alive reliably with a plain remote `nohup ... &` launch.
-4. `setup-host.sh` now includes a detached Python-based fallback start path for those systems.
+4. `setup-host.sh` now starts the stub in its own session from the Python launcher so older systems are less likely to kill it when the bootstrap SSH process exits.
 5. Password-only SSH hosts are supported for bootstrap:
    - if `sshpass` is installed locally, the script can install the generated key automatically
    - otherwise, the script prints exact manual `authorized_keys` setup steps
