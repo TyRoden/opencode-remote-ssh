@@ -57,7 +57,7 @@ Recommended public configuration uses the package name:
               {
                 "name": "prod-web-1",
                 "ssh": {
-                  "host": "203.0.113.10",
+                  "host": "203.0.113.11",
                   "user": "ops",
                   "port": 22,
                   "identityFile": "~/.ssh/id_ed25519"
@@ -182,10 +182,10 @@ Example:
     "default": {
       "hosts": [
         {
-          "name": "protagmanager",
-          "aliases": ["protag", "tagmgr"],
+          "name": "prodtestmanager",
+          "aliases": ["prodtest", "tagmgr"],
           "ssh": {
-            "host": "159.203.115.52",
+            "host": "192.168.115.52",
             "user": "root",
             "port": 22
           },
@@ -204,7 +204,7 @@ Any of these workspace targets now resolve to the same configured host:
   "type": "ssh-provider",
   "extra": {
     "provider": "default",
-    "host": "protagmanager"
+    "host": "prodtestmanager"
   }
 }
 ```
@@ -214,7 +214,7 @@ Any of these workspace targets now resolve to the same configured host:
   "type": "ssh-provider",
   "extra": {
     "provider": "default",
-    "host": "protag"
+    "host": "prodtest"
   }
 }
 ```
