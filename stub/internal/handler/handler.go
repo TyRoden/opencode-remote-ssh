@@ -15,8 +15,9 @@ import (
 )
 
 type Handler struct {
-	st     *state.State
-	events *eventBus
+	st        *state.State
+	events    *eventBus
+	startedAt int64
 }
 
 type eventBus struct {
@@ -67,8 +68,9 @@ func (e *eventBus) Unsubscribe(ch <-chan []byte) {
 
 func New(_ string, st *state.State) *Handler {
 	return &Handler{
-		st:     st,
-		events: newEventBus(),
+		st:        st,
+		events:    newEventBus(),
+		startedAt: time.Now().UnixMilli(),
 	}
 }
 
@@ -102,7 +104,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		"arch":     arch,
 		"stub": map[string]interface{}{
 			"pid":       os.Getpid(),
-			"startedAt": time.Now().UnixMilli(),
+			"startedAt": h.startedAt,
 		},
 	})
 }
