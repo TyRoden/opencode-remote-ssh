@@ -41,8 +41,8 @@ If you are loading the plugin from a local filesystem path during development, e
 
 ## Current Limitations
 
-- Workspace/tunnel runtime state is kept in memory by the plugin; plugin restart recovery is still incomplete.
-- The checklist item `POST /session/{sessionID}/permissions/{permissionID}` is still not implemented.
+- The plugin now persists local binding state and can attempt tunnel recovery after restart, but end-to-end restart recovery is still best-effort rather than fully authoritative.
+- Tunnel cleanup intentionally prefers safety over aggressive process matching; recovered bindings without a trusted tracked PID may require manual cleanup if a reachable orphan tunnel already exists.
 - End-to-end vertical-slice validation against a real remote host is still tracked separately.
 
 ## Requirements
