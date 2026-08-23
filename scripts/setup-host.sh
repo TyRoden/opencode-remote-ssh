@@ -80,10 +80,14 @@ add_key_via_password() {
         return 1
     fi
 
-    echo -n "Enter password for $USER@$HOST: "
-    read -r -s SSHPASS
-    echo ""
-    export SSHPASS
+    if [ -n "${SSHPASS:-}" ]; then
+        echo "Using password from SSHPASS environment variable for $USER@$HOST"
+    else
+        echo -n "Enter password for $USER@$HOST: "
+        read -r -s SSHPASS
+        echo ""
+        export SSHPASS
+    fi
 
     if [ ! -f "${IDENTITY_EXPANDED}.pub" ]; then
         echo "ERROR: Public key not found at ${IDENTITY_EXPANDED}.pub"
@@ -226,11 +230,18 @@ ssh_cmd "chmod +x $REMOTE_BASE/bin/opencode-remote-stub"
 echo "OK"
 
 echo "[6/6] Generating auth token and starting stub..."
-TOKEN_FILE="/tmp/opencode-remote-token-$HOST"
+TOKEN_FILE=$(mktemp "${TMPDIR:-/tmp}/opencode-remote-token.XXXXXX")
 TOKEN=$(openssl rand -hex 24 2>/dev/null || head -c 48 /dev/urandom | xxd -p)
+cleanup_token_file() {
+    rm -f "$TOKEN_FILE"
+}
+trap cleanup_token_file EXIT
+chmod 600 "$TOKEN_FILE"
 printf '%s' "$TOKEN" > "$TOKEN_FILE"
+chmod 600 "$TOKEN_FILE"
 scp $SCP_OPTS "$TOKEN_FILE" "$USER@$HOST:$REMOTE_BASE/run/stub.token"
 rm -f "$TOKEN_FILE"
+trap cleanup EXIT
 
 ssh_cmd "mkdir -p $REMOTE_BASE/log; pkill -f 'opencode-remote-stub' 2>/dev/null || true"
 start_stub_remote

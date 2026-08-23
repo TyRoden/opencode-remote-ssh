@@ -1,7 +1,6 @@
 import type { ResolvedPluginConfig } from "./config.js";
 import { LeaseManager } from "./leases.js";
 import { ProviderRegistry } from "./provider.js";
-import { buildBootstrapPlan } from "./bootstrap-plan.js";
 import { SSHManager } from "./ssh.js";
 import { RuntimeState } from "./state.js";
 import type { WorkspaceInfo, WorkspaceTarget } from "./types.js";
@@ -63,7 +62,6 @@ export class RemoteWorkspaceAdaptor {
 
     try {
       const bootstrap = await this.ssh.bootstrap(configured.id, selection);
-      const plan = buildBootstrapPlan(selection, bootstrap);
       this.state.set({
         workspaceID: configured.id,
         provider: selection.provider,
@@ -73,8 +71,8 @@ export class RemoteWorkspaceAdaptor {
         token: bootstrap.token,
         leaseMode: this.config.defaults.leaseMode,
         status: "ready",
+        tunnelPID: bootstrap.tunnelPID,
       });
-      void plan;
     } catch (error) {
       this.leases.release(selection.host.name, configured.id);
       throw error;

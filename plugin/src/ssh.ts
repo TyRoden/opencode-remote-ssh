@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
-import { execFile } from "node:child_process";
-import { existsSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { existsSync, mkdtempSync, unlinkSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ResolvedPluginConfig } from "./config.js";
 import type { ResolvedHost, WorkspaceBinding } from "./types.js";
@@ -16,6 +18,7 @@ export interface BootstrapResult {
   remoteHome: string;
   launchCommand: string;
   healthURL: string;
+  tunnelPID?: number;
 }
 
 export class SSHManager {
@@ -27,35 +30,41 @@ export class SSHManager {
       ? sshConfig.identityFile.replace(/^~\//, `${process.env.HOME}/`)
       : undefined;
     const remotePort = this.config.defaults.stubPort;
-    const localPort = this.allocateLocalPort(workspaceID, target.host.name);
     const remoteHome = await this.resolveRemoteHome(sshConfig, identityFile);
     const installRoot = this.expandInstallRoot(remoteHome);
     const token = randomBytes(24).toString("hex");
     const sshArgs = this.buildSSHArgs(sshConfig, identityFile);
     const stubBinary = `${installRoot}/bin/opencode-remote-stub`;
     const tokenFile = `${installRoot}/run/stub.token`;
-    const stubPath = `${process.cwd()}/../stub/bin/opencode-remote-stub`;
-    const tokenPath = `/tmp/opencode-remote-token-${workspaceID}`;
+    const stubPath = this.config.stubBinaryPath;
+    const tokenDir = mkdtempSync(join(tmpdir(), "opencode-remote-token-"));
+    const tokenPath = join(tokenDir, "stub.token");
 
     await this.execSSH(sshArgs, `mkdir -p ${installRoot}/bin ${installRoot}/run ${installRoot}/log ${installRoot}/state`);
 
-    if (existsSync(stubPath)) {
-      await this.scp(stubPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${stubBinary}`);
-      await this.execSSH(sshArgs, `chmod +x ${stubBinary}`);
+    if (!existsSync(stubPath)) {
+      throw new Error(`Stub binary not found at '${stubPath}'. Build it first or set plugin.stubBinaryPath.`);
     }
+    await this.scp(stubPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${stubBinary}`);
+    await this.execSSH(sshArgs, `chmod +x ${stubBinary}`);
 
-    writeFileSync(tokenPath, token);
+    writeFileSync(tokenPath, token, { mode: 0o600 });
+    chmodSync(tokenPath, 0o600);
     try {
       await this.scp(tokenPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${tokenFile}`);
     } finally {
-      unlinkSync(tokenPath);
+      try {
+        unlinkSync(tokenPath);
+      } finally {
+        rmSync(tokenDir, { recursive: true, force: true });
+      }
     }
 
     await this.execSSHAllowFailure(sshArgs, "pkill -f 'opencode-remote-stub' 2>/dev/null || true");
     await this.execSSH(sshArgs, `mkdir -p ${installRoot}/log`);
     await this.execSSH(sshArgs, this.buildRemoteStartCommand(installRoot, remotePort));
 
-    await this.ensureTunnel(sshConfig, identityFile, localPort, remotePort);
+    const { localPort, tunnelPID } = await this.ensureTunnel(workspaceID, target.host.name, sshConfig, identityFile, remotePort);
     await this.waitForHealth(localPort, token);
 
     return {
@@ -66,11 +75,40 @@ export class SSHManager {
       remoteHome,
       launchCommand: this.buildLaunchCommand(installRoot, remotePort),
       healthURL: `http://127.0.0.1:${localPort}/global/health`,
+      tunnelPID,
     };
   }
 
   async teardown(binding: WorkspaceBinding): Promise<void> {
-    await this.closeTunnel(binding.localPort);
+    await this.closeTunnel(binding.localPort, binding.tunnelPID);
+    await this.waitForPortClosed(binding.localPort);
+  }
+
+  async reconnect(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    const sshConfig = target.host.ssh;
+    const identityFile = sshConfig.identityFile
+      ? sshConfig.identityFile.replace(/^~\//, `${process.env.HOME}/`)
+      : undefined;
+
+    if (await this.isHealthReachable(binding.localPort, binding.token)) {
+      return binding;
+    }
+
+    const tunnelPID = await this.ensureSpecificOrFallbackTunnel(
+      binding.workspaceID,
+      target.host.name,
+      sshConfig,
+      identityFile,
+      binding.remotePort,
+      binding.localPort,
+    );
+
+    await this.waitForHealth(binding.localPort, binding.token);
+    return {
+      ...binding,
+      tunnelPID,
+      status: "ready",
+    };
   }
 
   private buildSSHArgs(
@@ -78,6 +116,10 @@ export class SSHManager {
     identityFile?: string,
   ): string[] {
     const args = [
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "NumberOfPasswordPrompts=0",
       "-o",
       "StrictHostKeyChecking=accept-new",
       "-o",
@@ -123,6 +165,10 @@ export class SSHManager {
   ): Promise<void> {
     const args = [
       "-o",
+      "BatchMode=yes",
+      "-o",
+      "NumberOfPasswordPrompts=0",
+      "-o",
       "StrictHostKeyChecking=accept-new",
       "-o",
       `UserKnownHostsFile=${knownHostsFile}`,
@@ -156,18 +202,60 @@ export class SSHManager {
   }
 
   private async ensureTunnel(
+    workspaceID: string,
+    host: string,
+    sshConfig: ResolvedHost["host"]["ssh"],
+    identityFile: string | undefined,
+    remotePort: number,
+  ): Promise<{ localPort: number; tunnelPID?: number }> {
+    const [start, end] = this.config.tunnel.localPortRange;
+    const span = end - start + 1;
+    const initialPort = this.allocateInitialLocalPort(workspaceID, host);
+
+    for (let attempt = 0; attempt < span; attempt++) {
+      const localPort = start + ((initialPort - start + attempt) % span);
+      const tunnelPID = await this.tryStartTunnel(sshConfig, identityFile, localPort, remotePort);
+      if (tunnelPID) {
+        return { localPort, tunnelPID };
+      }
+    }
+
+    throw new Error(`Unable to establish SSH tunnel: no available local port in range ${start}-${end}`);
+  }
+
+  private async ensureSpecificOrFallbackTunnel(
+    workspaceID: string,
+    host: string,
+    sshConfig: ResolvedHost["host"]["ssh"],
+    identityFile: string | undefined,
+    remotePort: number,
+    preferredLocalPort: number,
+  ): Promise<number | undefined> {
+    const preferred = await this.tryStartTunnel(sshConfig, identityFile, preferredLocalPort, remotePort);
+    if (preferred) {
+      return preferred;
+    }
+
+    const fallback = await this.ensureTunnel(workspaceID, host, sshConfig, identityFile, remotePort);
+    return fallback.tunnelPID;
+  }
+
+  private async tryStartTunnel(
     sshConfig: ResolvedHost["host"]["ssh"],
     identityFile: string | undefined,
     localPort: number,
     remotePort: number,
-  ): Promise<void> {
+  ): Promise<number | undefined> {
     if (await this.isPortReachable(localPort)) {
-      return;
+      return undefined;
     }
 
     const args = [
-      "-f",
       "-N",
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "NumberOfPasswordPrompts=0",
       "-o",
       "ExitOnForwardFailure=yes",
       "-o",
@@ -194,16 +282,40 @@ export class SSHManager {
       `${sshConfig.user}@${sshConfig.host}`,
     );
 
-    await execFileAsync("ssh", args, { timeout: this.config.tunnel.connectTimeoutMs * 2 });
+    const child = spawn("ssh", args, {
+      detached: true,
+      stdio: "ignore",
+    });
+
+    child.unref();
+
+    try {
+      await this.waitForPortReachable(localPort);
+      return child.pid;
+    } catch {
+      if (child.pid) {
+        try {
+          process.kill(child.pid, "SIGTERM");
+        } catch {
+          // Ignore cleanup errors if the process already exited.
+        }
+      }
+      return undefined;
+    }
   }
 
-  private async closeTunnel(localPort: number): Promise<void> {
-    try {
-      await execFileAsync("pkill", ["-f", `:${localPort}:127.0.0.1:${this.config.defaults.stubPort}`], {
-        timeout: 5000,
-      });
-    } catch {
-      return;
+  private async closeTunnel(localPort: number, tunnelPID?: number): Promise<void> {
+    if (tunnelPID) {
+      try {
+        process.kill(tunnelPID, "SIGTERM");
+        return;
+      } catch {
+        // Fall through to a best-effort local-port validation below.
+      }
+    }
+
+    if (await this.isPortReachable(localPort)) {
+      throw new Error(`Tunnel on local port ${localPort} is reachable but no tracked PID is available for teardown`);
     }
   }
 
@@ -233,12 +345,6 @@ export class SSHManager {
 
   private async isPortReachable(localPort: number): Promise<boolean> {
     try {
-      await execFileAsync("ssh", ["-G", "127.0.0.1"], { timeout: 1000 });
-    } catch {
-      // Ignore; this is only used to keep the method async without extra deps.
-    }
-
-    try {
       const response = await fetch(`http://127.0.0.1:${localPort}/global/health`, { signal: AbortSignal.timeout(500) });
       return response.ok || response.status === 401 || response.status === 403;
     } catch {
@@ -246,11 +352,112 @@ export class SSHManager {
     }
   }
 
+  private async isHealthReachable(localPort: number, token: string): Promise<boolean> {
+    try {
+      const response = await fetch(`http://127.0.0.1:${localPort}/global/health`, {
+        signal: AbortSignal.timeout(500),
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async ensureRecoveredBinding(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    if (await this.isHealthReachable(binding.localPort, binding.token)) {
+      return binding;
+    }
+    return this.reconnect(binding, target);
+  }
+
+  async validateRecoveredBinding(binding: WorkspaceBinding): Promise<boolean> {
+    return this.isHealthReachable(binding.localPort, binding.token);
+  }
+
+  async closeRecoveredBinding(binding: WorkspaceBinding): Promise<void> {
+    if (binding.tunnelPID) {
+      await this.teardown(binding);
+      return;
+    }
+
+    if (await this.isPortReachable(binding.localPort)) {
+      throw new Error(`Recovered tunnel on local port ${binding.localPort} is reachable but has no tracked PID for safe teardown`);
+    }
+  }
+
+  async isBindingReady(binding: WorkspaceBinding): Promise<boolean> {
+    return this.isHealthReachable(binding.localPort, binding.token);
+  }
+
+  async reconnectBinding(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async canReachBinding(binding: WorkspaceBinding): Promise<boolean> {
+    return this.isHealthReachable(binding.localPort, binding.token);
+  }
+
+  async probeBinding(binding: WorkspaceBinding): Promise<boolean> {
+    return this.isHealthReachable(binding.localPort, binding.token);
+  }
+
+  async ensureReady(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async ensureActive(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async reconnectAfterRestart(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async ensureAfterRestart(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async ensureTargetReady(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+
+  async reconnectTargetBinding(binding: WorkspaceBinding, target: ResolvedHost): Promise<WorkspaceBinding> {
+    return this.ensureRecoveredBinding(binding, target);
+  }
+  private async waitForPortReachable(localPort: number): Promise<void> {
+    const deadline = Date.now() + this.config.tunnel.connectTimeoutMs;
+
+    while (Date.now() < deadline) {
+      if (await this.isPortReachable(localPort)) {
+        return;
+      }
+      await this.sleep(200);
+    }
+
+    throw new Error(`SSH tunnel did not become reachable on local port ${localPort}`);
+  }
+
+  private async waitForPortClosed(localPort: number): Promise<void> {
+    const deadline = Date.now() + 5000;
+
+    while (Date.now() < deadline) {
+      if (!(await this.isPortReachable(localPort))) {
+        return;
+      }
+      await this.sleep(200);
+    }
+
+    throw new Error(`SSH tunnel on local port ${localPort} did not close after teardown`);
+  }
+
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  private allocateLocalPort(workspaceID: string, host: string): number {
+  private allocateInitialLocalPort(workspaceID: string, host: string): number {
     const [start, end] = this.config.tunnel.localPortRange;
     const seed = `${workspaceID}:${host}`;
     let hash = 0;
@@ -280,13 +487,14 @@ export class SSHManager {
   private buildRemoteStartCommand(installRoot: string, remotePort: number): string {
     return [
       "python2 - <<'PY' 2>/dev/null || python - <<'PY'",
+      "import os",
       "import subprocess",
       "import time",
       "import sys",
       "null_in = open('/dev/null', 'rb')",
       "null_out = open('/dev/null', 'ab')",
       `cmd = ['${installRoot}/bin/opencode-remote-stub', '--listen', '127.0.0.1:${remotePort}', '--token-file', '${installRoot}/run/stub.token', '--state-dir', '${installRoot}/state', '--log-file', '${installRoot}/log/stub.log']`,
-      "proc = subprocess.Popen(cmd, stdin=null_in, stdout=null_out, stderr=null_out, close_fds=True)",
+      "proc = subprocess.Popen(cmd, stdin=null_in, stdout=null_out, stderr=null_out, close_fds=True, preexec_fn=os.setsid)",
       "time.sleep(2)",
       "sys.exit(0 if proc.poll() is None else 1)",
       "PY",

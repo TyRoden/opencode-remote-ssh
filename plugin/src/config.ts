@@ -1,3 +1,5 @@
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DefaultsConfig, PluginConfig, ProviderConfig, TunnelConfig } from "./types.js";
 
 const DEFAULT_TUNNEL: Required<TunnelConfig> = {
@@ -12,8 +14,12 @@ const DEFAULTS: Required<DefaultsConfig> = {
   stubPort: 39217,
 };
 
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_STUB_BINARY = resolve(join(MODULE_DIR, "../../stub/bin/opencode-remote-stub"));
+
 export interface ResolvedPluginConfig extends PluginConfig {
   installRoot: string;
+  stubBinaryPath: string;
   tunnel: Required<TunnelConfig>;
   defaults: Required<DefaultsConfig>;
   providers: Record<string, ProviderConfig>;
@@ -24,25 +30,11 @@ export function resolveConfig(input: PluginConfig): ResolvedPluginConfig {
   if (!input || !input.providers || Object.keys(input.providers).length === 0) {
     return {
       installRoot: "~/.opencode-remote",
+      stubBinaryPath: DEFAULT_STUB_BINARY,
       tunnel: DEFAULT_TUNNEL,
       defaults: DEFAULTS,
       providers: {},
     };
-  }
-
-  // Validate providers
-  for (const [providerName, provider] of Object.entries(input.providers)) {
-    if (!provider.hosts || provider.hosts.length === 0) {
-      continue;
-    }
-    for (const host of provider.hosts) {
-      if (!host.name) {
-        continue;
-      }
-      if (!host.ssh?.host || !host.ssh?.user) {
-        continue;
-      }
-    }
   }
 
   // Filter out invalid providers
@@ -59,6 +51,7 @@ export function resolveConfig(input: PluginConfig): ResolvedPluginConfig {
   return {
     ...input,
     installRoot: input.installRoot ?? "~/.opencode-remote",
+    stubBinaryPath: input.stubBinaryPath ? resolve(input.stubBinaryPath) : DEFAULT_STUB_BINARY,
     tunnel: {
       ...DEFAULT_TUNNEL,
       ...input.tunnel,

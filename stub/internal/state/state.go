@@ -197,6 +197,18 @@ func (s *State) ListSessions() []*Session {
 	return list
 }
 
+func (s *State) ListSessionsByWorkspace(workspaceID string) []*Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	list := make([]*Session, 0)
+	for _, se := range s.sessions {
+		if se.WorkspaceID == workspaceID {
+			list = append(list, se)
+		}
+	}
+	return list
+}
+
 func (s *State) CreateSession(se *Session) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -285,6 +297,8 @@ func (s *State) saveApproval(a *Approval) error {
 	return os.WriteFile(path, data, 0644)
 }
 
+// CheckApproval returns the first approval matching workspaceID and path, if any.
+// It is a read-only check and never consumes one-shot approvals.
 func (s *State) CheckApproval(workspaceID, path string) *Approval {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -295,6 +309,29 @@ func (s *State) CheckApproval(workspaceID, path string) *Approval {
 		if matchPattern(a.Pattern, path) {
 			return a
 		}
+	}
+	return nil
+}
+
+// ConsumeApproval removes and returns the first matching one-shot ("once") approval,
+// allowing it to be used exactly one time. "always" approvals are returned unchanged
+// and remain available for repeated use.
+func (s *State) ConsumeApproval(workspaceID, path string) *Approval {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, a := range s.approvals {
+		if a.WorkspaceID != workspaceID {
+			continue
+		}
+		if !matchPattern(a.Pattern, path) {
+			continue
+		}
+		if a.Mode == "once" {
+			delete(s.approvals, id)
+			os.Remove(filepath.Join(s.root, "approvals", id+".json"))
+			return a
+		}
+		return a
 	}
 	return nil
 }

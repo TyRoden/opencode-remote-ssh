@@ -79,23 +79,23 @@ When you create a remote workspace:
 
 ## Remote Install Layout
 
-On each remote host, the stub installs under `~/.opencode-remote-ssh/`:
+On each remote host, the stub installs under `~/.opencode-remote/`:
 
 ```
-~/.opencode-remote-ssh/
+~/.opencode-remote/
 ├── bin/
-│   └── opencode-remote-ssh-stub   # The Go binary (your code runs here)
+│   └── opencode-remote-stub
 ├── run/
-│   ├── stub.token             # Authentication token
-│   └── stub.pid               # Process ID (optional)
+│   └── stub.token
 ├── log/
-│   └── stub.log               # Runtime logs
-├── state/
-│   ├── workspaces/            # Workspace metadata
-│   ├── sessions/              # Active session data
-│   └── approvals/             # Persisted "always" permissions
-└── version                    # Version marker
-```
+│   └── stub.log
+└── state/
+    ├── workspaces/
+    ├── sessions/
+    └── approvals/
+```.
+
+The plugin can also be pointed at a locally built stub binary explicitly via `stubBinaryPath` in plugin configuration when auto-discovery is not suitable.
 
 ## API Compatibility
 
@@ -107,7 +107,9 @@ The stub implements a subset of OpenCode's API so OpenCode can treat it as a rem
 | `GET /global/event` | Real-time updates |
 | `GET/POST /experimental/workspace` | Create/manage workspaces |
 | `POST /session` | Start a new session |
-| `POST /session/{id}/shell` | Run a command |
+| `POST /session/{id}/shell` | Run a shell command |
+| `POST /session/{id}/command` | Run a structured command payload |
+| `POST /experimental/workspace/{id}/session-restore` | List sessions that belong to a workspace |
 | `GET /permission` | Check for path approvals |
 | `POST /permission/{id}/reply` | Approve/deny path access |
 

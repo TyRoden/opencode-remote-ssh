@@ -80,6 +80,10 @@ func main() {
 			h.Command(w, r)
 			return
 		}
+		if strings.Contains(path, "/permissions/") {
+			h.SessionPermissionReply(w, r)
+			return
+		}
 		if r.Method == http.MethodGet {
 			h.SessionGet(w, r)
 			return

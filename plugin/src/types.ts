@@ -37,6 +37,7 @@ export interface DefaultsConfig {
 
 export interface PluginConfig {
   installRoot?: string;
+  stubBinaryPath?: string;
   tunnel?: TunnelConfig;
   defaults?: DefaultsConfig;
   providers?: Record<string, ProviderConfig>;
@@ -65,6 +66,7 @@ export interface WorkspaceBinding {
   token: string;
   leaseMode: LeaseMode;
   status: "creating" | "ready" | "failed" | "removed";
+  tunnelPID?: number;
   sessionID?: string;
 }
 

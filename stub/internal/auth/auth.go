@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"net/http"
 	"strings"
 )
@@ -24,7 +25,7 @@ func Require(token string, next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if parts[1] != token {
+		if subtle.ConstantTimeCompare([]byte(parts[1]), []byte(token)) != 1 {
 			http.Error(w, `{"error":{"type":"unauthorized","message":"invalid token"}}`, http.StatusUnauthorized)
 			return
 		}

@@ -27,16 +27,30 @@ If you are loading the plugin from a local filesystem path during development, e
 ## Features
 
 - Provider-based host management
+- Host aliases for friendly workspace targets
 - SSH bootstrap for the remote stub
-- Plugin-managed SSH tunneling
+- Plugin-managed SSH tunneling with tracked local tunnel teardown
+- Collision-aware local tunnel port selection
 - Permission-first path access
-- Persistent `always` approvals per workspace
+- `once` and persistent `always` approvals per workspace
 - Self-contained remote stub binary
+- Workspace session restore support
+- Shell and command execution endpoints on the remote stub
+- Configurable local `stubBinaryPath` override when auto-discovery is not suitable
+- Stub test harness covering auth, permission flow, session restore, and execution behavior
+
+## Current Limitations
+
+- Workspace/tunnel runtime state is kept in memory by the plugin; plugin restart recovery is still incomplete.
+- The checklist item `POST /session/{sessionID}/permissions/{permissionID}` is still not implemented.
+- End-to-end vertical-slice validation against a real remote host is still tracked separately.
 
 ## Requirements
 
 - Local: OpenCode, Node.js for the plugin, Go 1.21+ to build the stub
 - Remote: Linux, SSH access, POSIX shell
+
+If the plugin cannot find the stub binary automatically, set `stubBinaryPath` in the plugin config to the built `opencode-remote-stub` binary.
 
 ## Quick Start
 
@@ -223,11 +237,12 @@ Any of these workspace targets now resolve to the same configured host:
 
 Path access is denied by default.
 
-When a shell operation attempts to access an unapproved path:
+When a shell or command operation attempts to access an unapproved path:
 
 1. The stub creates a permission request.
 2. The request must be approved explicitly.
-3. `always` approvals persist for that workspace.
+3. `once` approvals allow exactly one matching operation.
+4. `always` approvals persist for that workspace.
 
 The plugin does not auto-approve these permissions.
 
