@@ -30,7 +30,10 @@ export class ProviderRegistry {
     const requestedHost = request.host;
     const candidates = requestedHost
       ? provider.hosts.filter(
-          (item) => item.name === requestedHost || item.aliases?.includes(requestedHost) === true,
+          (item) =>
+            item.name === requestedHost ||
+            item.ssh.host === requestedHost ||
+            item.aliases?.includes(requestedHost) === true,
         )
       : provider.hosts.filter((candidate) => this.matchesLabels(candidate, requiredLabels));
 
@@ -52,6 +55,17 @@ export class ProviderRegistry {
       return {
         selection: this.toResolved(request.provider, requestedLabels, host, strategy)
       };
+    }
+
+    const existingLease = request.host ? this.leases.get(requestedHost ?? "") : undefined;
+    if (existingLease && existingLease.workspaceID === workspaceID) {
+      const host = candidates.find((candidate) => candidate.name === existingLease.host);
+      if (host) {
+        return {
+          selection: this.toResolved(request.provider, requestedLabels, host, strategy),
+          lease: existingLease,
+        };
+      }
     }
 
     for (const host of candidates) {

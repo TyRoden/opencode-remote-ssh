@@ -2,6 +2,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RuntimeState } from "./state.js";
+import { ProviderRegistry } from "./provider.js";
+import { LeaseManager } from "./leases.js";
+import { resolveConfig } from "./config.js";
 import type { WorkspaceBinding } from "./types.js";
 
 function binding(overrides: Partial<WorkspaceBinding> = {}): WorkspaceBinding {
@@ -85,11 +88,70 @@ function testRuntimeStateIgnoresMalformedPersistedState() {
   // behavior under the actual module environment.
 }
 
+function testProviderRegistryResolvesBySshHost() {
+  const registry = new ProviderRegistry(
+    resolveConfig({
+      providers: {
+        default: {
+          hosts: [
+            {
+              name: "project-system",
+              aliases: ["project system"],
+              ssh: {
+                host: "10.10.10.250",
+                user: "operations",
+              },
+            },
+          ],
+        },
+      },
+    }),
+    new LeaseManager(),
+  );
+
+  const byIp = registry.resolve({ provider: "default", host: "10.10.10.250" });
+  assert(byIp.host.name === "project-system", `expected ssh.host lookup to resolve project-system, got ${byIp.host.name}`);
+
+  const byAlias = registry.resolve({ provider: "default", host: "project system" });
+  assert(byAlias.host.name === "project-system", `expected alias lookup to resolve project-system, got ${byAlias.host.name}`);
+}
+
+function testProviderRegistryAllowsSameWorkspaceToReuseExplicitLease() {
+  const leases = new LeaseManager();
+  const registry = new ProviderRegistry(
+    resolveConfig({
+      providers: {
+        default: {
+          hosts: [
+            {
+              name: "project-system",
+              aliases: ["project system"],
+              ssh: {
+                host: "10.10.10.250",
+                user: "operations",
+              },
+            },
+          ],
+        },
+      },
+    }),
+    leases,
+  );
+
+  const first = registry.acquireResolved({ provider: "default", host: "project-system" }, "ws1");
+  assert(first.host.name === "project-system", `expected first lease to resolve project-system, got ${first.host.name}`);
+
+  const reused = registry.acquireResolved({ provider: "default", host: "project-system" }, "ws1");
+  assert(reused.host.name === "project-system", `expected same workspace to reuse explicit lease, got ${reused.host.name}`);
+}
+
 function run() {
   testRuntimeStatePersistsBindings();
   testRuntimeStateDeletePersistsRemoval();
   testRuntimeStateReplaceUpdatesPersistedBinding();
   testRuntimeStateIgnoresMalformedPersistedState();
+  testProviderRegistryResolvesBySshHost();
+  testProviderRegistryAllowsSameWorkspaceToReuseExplicitLease();
   console.log("state.test.ts: ok");
 }
 

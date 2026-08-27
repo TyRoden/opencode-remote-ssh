@@ -31,10 +31,10 @@ function providerRequestForWorkspace(workspace: WorkspaceInfo) {
 }
 
 async function ensureBindingReady(binding: import("./types.js").WorkspaceBinding): Promise<import("./types.js").WorkspaceBinding> {
-  const selection = providers.resolve({
+  const selection = providers.acquireResolved({
     provider: binding.provider,
     host: binding.host,
-  });
+  }, binding.workspaceID);
   const recovered = await sshManager.ensureRecoveredBinding(binding, selection);
   if (recovered.localPort !== binding.localPort || recovered.tunnelPID !== binding.tunnelPID || recovered.status !== binding.status) {
     state.replace(recovered);
@@ -137,7 +137,7 @@ void removeBinding;
 
 
 function resolveProvider(workspace: WorkspaceInfo) {
-  return providers.resolve(providerRequestForWorkspace(workspace));
+  return providers.acquireResolved(providerRequestForWorkspace(workspace), workspace.id);
 }
 
 function configureWorkspace(workspace: WorkspaceInfo): WorkspaceInfo {

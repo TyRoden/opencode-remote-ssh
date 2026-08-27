@@ -4,6 +4,8 @@ import { existsSync, mkdtempSync, unlinkSync, writeFileSync, chmodSync, rmSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import type { ResolvedPluginConfig } from "./config.js";
 import type { ResolvedHost, WorkspaceBinding } from "./types.js";
 
@@ -45,8 +47,13 @@ export class SSHManager {
     if (!existsSync(stubPath)) {
       throw new Error(`Stub binary not found at '${stubPath}'. Build it first or set plugin.stubBinaryPath.`);
     }
-    await this.scp(stubPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${stubBinary}`);
-    await this.execSSH(sshArgs, `chmod +x ${stubBinary}`);
+
+    const localStubHash = this.sha256File(stubPath);
+    const remoteStubHash = await this.remoteStubHash(sshArgs, stubBinary);
+    if (remoteStubHash !== localStubHash) {
+      await this.scp(stubPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${stubBinary}`);
+      await this.execSSH(sshArgs, `chmod +x ${stubBinary}`);
+    }
 
     writeFileSync(tokenPath, token, { mode: 0o600 });
     chmodSync(tokenPath, 0o600);
@@ -187,6 +194,22 @@ export class SSHManager {
     await execFileAsync("scp", [...args, localPath, destination], {
       timeout: this.config.tunnel.connectTimeoutMs * 4,
     });
+  }
+
+  private sha256File(path: string): string {
+    const hash = createHash("sha256");
+    hash.update(readFileSync(path));
+    return hash.digest("hex");
+  }
+
+  private async remoteStubHash(sshArgs: string[], remotePath: string): Promise<string | undefined> {
+    const escapedPath = remotePath.replace(/'/g, `'\\''`);
+    const output = await this.execSSHAllowFailure(
+      sshArgs,
+      `if [ -f '${escapedPath}' ]; then sha256sum '${escapedPath}' 2>/dev/null | awk '{print $1}'; fi`,
+    );
+    const hash = output.trim();
+    return hash || undefined;
   }
 
   private async resolveRemoteHome(
