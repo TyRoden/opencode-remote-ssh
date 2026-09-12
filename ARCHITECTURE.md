@@ -24,6 +24,7 @@ The OpenCode plugin that runs on your local machine. It handles:
 | **SSH Bootstrap** | Uploads and starts the remote stub |
 | **Tunnel Management** | Maintains the SSH port forwarding |
 | **Workspace Adaptor** | Implements OpenCode's workspace interface |
+| **Remote Tools** | Exposes connection, status, disconnect, and doctor workflows for first-launch validation |
 
 ### 2. Remote Stub (`stub/`)
 
@@ -97,6 +98,16 @@ On each remote host, the stub installs under `~/.opencode-remote/`:
 
 The plugin can also be pointed at a locally built stub binary explicitly via `stubBinaryPath` in plugin configuration when auto-discovery is not suitable.
 
+## First-Launch Flow
+
+The normal user-facing connection path is `remote-switch`. It resolves the configured provider host, ensures the remote stub binary and token are installed, starts the stub if needed, opens an SSH tunnel with local-port fallback, health-checks through the forwarded URL, creates a remote workspace/session, and persists the resulting binding for later recovery.
+
+`remote-status` reloads persisted bindings and attempts to recover stale tunnels. If a persisted binding cannot be resolved or reached, it is removed from local state instead of blocking future connections.
+
+`remote-doctor` runs the same connection path as a preflight. It can validate an existing recovered binding, or create and clean up a temporary test workspace when no binding exists.
+
+For non-interactive validation, `scripts/verify-remote-lifecycle.mjs` runs the same provider registry and SSH manager against a configured host and verifies the full remote lifecycle: bootstrap, tunnel, health, workspace, session, permission, shell, and cleanup.
+
 ## API Compatibility
 
 The stub implements a subset of OpenCode's API so OpenCode can treat it as a remote workspace:
@@ -128,7 +139,9 @@ The stub is designed with security in mind:
 Two recent runtime behaviors are important when reasoning about the current system:
 
 1. **Host aliases**: a configured host can expose multiple friendly names through `aliases`, while still resolving to the same `ssh.host` target.
-2. **Detached remote startup**: `setup-host.sh` launches the stub in a separate session via Python `setsid` semantics so the process survives bootstrap SSH teardown more reliably on older Linux hosts.
+2. **Detached remote startup**: setup flows launch the stub in a separate session via Python `setsid` semantics so the process survives bootstrap SSH teardown more reliably on older Linux hosts.
+3. **Lease-aware recovery**: persisted bindings can re-resolve their own lease by canonical host name, `ssh.host`, or alias instead of blocking reconnects.
+4. **Verified first launch**: `remote-switch`, `remote-doctor`, and the live harness verify the tunnel and remote health before reporting a connection as ready.
 
 ## Why This Architecture?
 

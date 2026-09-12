@@ -57,15 +57,12 @@ export class ProviderRegistry {
       };
     }
 
-    const existingLease = request.host ? this.leases.get(requestedHost ?? "") : undefined;
-    if (existingLease && existingLease.workspaceID === workspaceID) {
-      const host = candidates.find((candidate) => candidate.name === existingLease.host);
-      if (host) {
-        return {
-          selection: this.toResolved(request.provider, requestedLabels, host, strategy),
-          lease: existingLease,
-        };
-      }
+    const existingHost = candidates.find((candidate) => this.leases.get(candidate.name)?.workspaceID === workspaceID);
+    if (existingHost) {
+      return {
+        selection: this.toResolved(request.provider, requestedLabels, existingHost, strategy),
+        lease: this.leases.get(existingHost.name),
+      };
     }
 
     for (const host of candidates) {

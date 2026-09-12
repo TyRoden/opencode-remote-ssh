@@ -36,14 +36,16 @@ If you are loading the plugin from a local filesystem path during development, e
 - Self-contained remote stub binary
 - Workspace session restore support
 - Shell and command execution endpoints on the remote stub
+- User-facing `remote-switch`, `remote-status`, `remote-disconnect`, and `remote-doctor` tools
 - Configurable local `stubBinaryPath` override when auto-discovery is not suitable
+- Live remote lifecycle harness for validating a configured host before relying on interactive use
 - Stub test harness covering auth, permission flow, session restore, and execution behavior
 
 ## Current Limitations
 
-- The plugin now persists local binding state and can attempt tunnel recovery after restart, but end-to-end restart recovery is still best-effort rather than fully authoritative.
+- The plugin persists local binding state and can recover stale tunnels after restart, but remote token rotation can still invalidate old bindings; reconnecting creates a fresh binding when recovery fails.
 - Tunnel cleanup intentionally prefers safety over aggressive process matching; recovered bindings without a trusted tracked PID may require manual cleanup if a reachable orphan tunnel already exists.
-- End-to-end vertical-slice validation against a real remote host is still tracked separately.
+- The live remote lifecycle harness requires a real configured host and SSH access; it is not run automatically by the unit test suite.
 
 ## Requirements
 
@@ -117,7 +119,35 @@ What it does **not** do by itself:
 1. It does not permanently attach OpenCode to the remote host.
 2. The runtime connection is established later by the plugin when a workspace is created.
 
-### 4. Create a Remote Workspace
+### 4. Connect to a Remote Host
+
+The plugin exposes a convenience tool for the common first-launch path:
+
+```text
+Use the remote-switch tool with provider default and host prod-web-1.
+```
+
+`remote-switch` resolves the configured host name, `ssh.host`, or alias; ensures the stub is installed and running; creates or recovers the SSH tunnel; verifies remote health; creates a remote workspace/session; and persists the local binding for later recovery.
+
+You can check or recover current bindings with:
+
+```text
+Use the remote-status tool.
+```
+
+You can run a preflight without keeping a new test workspace around with:
+
+```text
+Use the remote-doctor tool with provider default and host prod-web-1.
+```
+
+You can disconnect with:
+
+```text
+Use the remote-disconnect tool.
+```
+
+### 5. Create a Remote Workspace Directly
 
 When creating a workspace, specify the `ssh-provider` type and provider/host in `extra`:
 
@@ -196,11 +226,11 @@ Example:
     "default": {
       "hosts": [
         {
-          "name": "protagmanager",
-          "aliases": ["protag", "tagmgr"],
+          "name": "prod-web-1",
+          "aliases": ["web-primary", "prod-app"],
           "ssh": {
-            "host": "159.203.115.52",
-            "user": "root",
+            "host": "203.0.113.10",
+            "user": "ops",
             "port": 22
           },
           "labels": ["linux", "remote"]
@@ -218,7 +248,7 @@ Any of these workspace targets now resolve to the same configured host:
   "type": "ssh-provider",
   "extra": {
     "provider": "default",
-    "host": "protagmanager"
+    "host": "prod-web-1"
   }
 }
 ```
@@ -228,7 +258,7 @@ Any of these workspace targets now resolve to the same configured host:
   "type": "ssh-provider",
   "extra": {
     "provider": "default",
-    "host": "protag"
+    "host": "web-primary"
   }
 }
 ```
@@ -265,6 +295,15 @@ On the remote host, files are installed under `~/.opencode-remote/`:
 ```
 
 ## Manual Verification
+
+Run the full plugin/stub lifecycle harness from the plugin directory after building the stub and configuring at least one host:
+
+```bash
+cd plugin
+npm run verify:remote -- --provider default --host prod-web-1
+```
+
+The harness uses the same provider registry and SSH manager as the plugin. It resolves the host, bootstraps or updates the stub, creates a tunnel, health-checks through the forwarded URL, creates a workspace/session, verifies the permission flow with a shell command, and cleans up the test workspace/session/tunnel.
 
 If you want to verify the stub manually after setup:
 

@@ -95,11 +95,11 @@ function testProviderRegistryResolvesBySshHost() {
         default: {
           hosts: [
             {
-              name: "project-system",
-              aliases: ["project system"],
+              name: "prod-web-1",
+              aliases: ["primary-web"],
               ssh: {
-                host: "10.10.10.250",
-                user: "operations",
+                host: "203.0.113.10",
+                user: "ops",
               },
             },
           ],
@@ -109,11 +109,11 @@ function testProviderRegistryResolvesBySshHost() {
     new LeaseManager(),
   );
 
-  const byIp = registry.resolve({ provider: "default", host: "10.10.10.250" });
-  assert(byIp.host.name === "project-system", `expected ssh.host lookup to resolve project-system, got ${byIp.host.name}`);
+  const byIp = registry.resolve({ provider: "default", host: "203.0.113.10" });
+  assert(byIp.host.name === "prod-web-1", `expected ssh.host lookup to resolve prod-web-1, got ${byIp.host.name}`);
 
-  const byAlias = registry.resolve({ provider: "default", host: "project system" });
-  assert(byAlias.host.name === "project-system", `expected alias lookup to resolve project-system, got ${byAlias.host.name}`);
+  const byAlias = registry.resolve({ provider: "default", host: "primary-web" });
+  assert(byAlias.host.name === "prod-web-1", `expected alias lookup to resolve prod-web-1, got ${byAlias.host.name}`);
 }
 
 function testProviderRegistryAllowsSameWorkspaceToReuseExplicitLease() {
@@ -124,11 +124,11 @@ function testProviderRegistryAllowsSameWorkspaceToReuseExplicitLease() {
         default: {
           hosts: [
             {
-              name: "project-system",
-              aliases: ["project system"],
+              name: "prod-web-1",
+              aliases: ["primary-web"],
               ssh: {
-                host: "10.10.10.250",
-                user: "operations",
+                host: "203.0.113.10",
+                user: "ops",
               },
             },
           ],
@@ -138,11 +138,17 @@ function testProviderRegistryAllowsSameWorkspaceToReuseExplicitLease() {
     leases,
   );
 
-  const first = registry.acquireResolved({ provider: "default", host: "project-system" }, "ws1");
-  assert(first.host.name === "project-system", `expected first lease to resolve project-system, got ${first.host.name}`);
+  const first = registry.acquireResolved({ provider: "default", host: "prod-web-1" }, "ws1");
+  assert(first.host.name === "prod-web-1", `expected first lease to resolve prod-web-1, got ${first.host.name}`);
 
-  const reused = registry.acquireResolved({ provider: "default", host: "project-system" }, "ws1");
-  assert(reused.host.name === "project-system", `expected same workspace to reuse explicit lease, got ${reused.host.name}`);
+  const reused = registry.acquireResolved({ provider: "default", host: "prod-web-1" }, "ws1");
+  assert(reused.host.name === "prod-web-1", `expected same workspace to reuse explicit lease, got ${reused.host.name}`);
+
+  const reusedByIp = registry.acquireResolved({ provider: "default", host: "203.0.113.10" }, "ws1");
+  assert(reusedByIp.host.name === "prod-web-1", `expected same workspace to reuse explicit lease by ssh.host, got ${reusedByIp.host.name}`);
+
+  const reusedByAlias = registry.acquireResolved({ provider: "default", host: "primary-web" }, "ws1");
+  assert(reusedByAlias.host.name === "prod-web-1", `expected same workspace to reuse explicit lease by alias, got ${reusedByAlias.host.name}`);
 }
 
 function run() {

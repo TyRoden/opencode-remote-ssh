@@ -29,3 +29,7 @@ IMPLEMENTATION_CHECKLIST.md
 TEST_PLAN.md
 ISSUES_CHECKLIST.md
 review-notes/
+
+# Local agent/worktree metadata
+.claude/
+.cortexkit/

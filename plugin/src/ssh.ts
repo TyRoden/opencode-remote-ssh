@@ -51,8 +51,7 @@ export class SSHManager {
     const localStubHash = this.sha256File(stubPath);
     const remoteStubHash = await this.remoteStubHash(sshArgs, stubBinary);
     if (remoteStubHash !== localStubHash) {
-      await this.scp(stubPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${stubBinary}`);
-      await this.execSSH(sshArgs, `chmod +x ${stubBinary}`);
+      await this.installStub(stubPath, sshArgs, sshConfig, identityFile, stubBinary);
     }
 
     writeFileSync(tokenPath, token, { mode: 0o600 });
@@ -101,7 +100,7 @@ export class SSHManager {
       return binding;
     }
 
-    const tunnelPID = await this.ensureSpecificOrFallbackTunnel(
+    const tunnel = await this.ensureSpecificOrFallbackTunnel(
       binding.workspaceID,
       target.host.name,
       sshConfig,
@@ -110,10 +109,11 @@ export class SSHManager {
       binding.localPort,
     );
 
-    await this.waitForHealth(binding.localPort, binding.token);
+    await this.waitForHealth(tunnel.localPort, binding.token);
     return {
       ...binding,
-      tunnelPID,
+      localPort: tunnel.localPort,
+      tunnelPID: tunnel.tunnelPID,
       status: "ready",
     };
   }
@@ -196,6 +196,23 @@ export class SSHManager {
     });
   }
 
+  private async installStub(
+    localPath: string,
+    sshArgs: string[],
+    sshConfig: ResolvedHost["host"]["ssh"],
+    identityFile: string | undefined,
+    remotePath: string,
+  ): Promise<void> {
+    const tempPath = `${remotePath}.upload-${process.pid}-${Date.now()}`;
+    await this.scp(localPath, sshConfig, identityFile, `${sshConfig.user}@${sshConfig.host}:${tempPath}`);
+    const escapedTemp = tempPath.replace(/'/g, `'\''`);
+    const escapedRemote = remotePath.replace(/'/g, `'\''`);
+    await this.execSSH(
+      sshArgs,
+      `chmod +x '${escapedTemp}' && mv -f '${escapedTemp}' '${escapedRemote}' && chmod +x '${escapedRemote}'`,
+    );
+  }
+
   private sha256File(path: string): string {
     const hash = createHash("sha256");
     hash.update(readFileSync(path));
@@ -253,14 +270,13 @@ export class SSHManager {
     identityFile: string | undefined,
     remotePort: number,
     preferredLocalPort: number,
-  ): Promise<number | undefined> {
-    const preferred = await this.tryStartTunnel(sshConfig, identityFile, preferredLocalPort, remotePort);
-    if (preferred) {
-      return preferred;
+  ): Promise<{ localPort: number; tunnelPID?: number }> {
+    const tunnelPID = await this.tryStartTunnel(sshConfig, identityFile, preferredLocalPort, remotePort);
+    if (tunnelPID) {
+      return { localPort: preferredLocalPort, tunnelPID };
     }
 
-    const fallback = await this.ensureTunnel(workspaceID, host, sshConfig, identityFile, remotePort);
-    return fallback.tunnelPID;
+    return this.ensureTunnel(workspaceID, host, sshConfig, identityFile, remotePort);
   }
 
   private async tryStartTunnel(
