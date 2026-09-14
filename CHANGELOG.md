@@ -4,16 +4,20 @@ All notable changes to opencode-remote-ssh will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-09-14
+
 ### Added
 
 - Added optional host `aliases` in provider configuration so a workspace target can resolve a host by either its canonical `name` or any configured alias.
 - Added user-facing `remote-switch`, `remote-status`, `remote-disconnect`, and `remote-doctor` tools for first-launch connection, recovery, preflight validation, and cleanup.
+- Added lower-level `remote-workspace-create`, `remote-workspace-list`, and `remote-workspace-remove` tools for direct workspace management.
 - Added a live remote lifecycle harness, available with `npm run verify:remote -- --provider <provider> --host <host>` from `plugin/`, that exercises provider resolution, SSH bootstrap, tunneling, health checks, workspace/session creation, permission approval, shell execution, and cleanup against a configured host.
 
 ### Changed
 
 - Clarified the README, architecture notes, and test plan to document alias-based host resolution and the current detached remote stub startup behavior.
 - Documented the recommended first-launch flow and live verification harness.
+- Changed remote stub install behavior to compare local and remote hashes before upload, so a matching installed binary is reused instead of overwritten.
 
 ### Fixed
 
@@ -21,6 +25,7 @@ All notable changes to opencode-remote-ssh will be documented in this file.
 - Fixed SSH bootstrap so stub updates upload to a remote temporary path and install with a remote move, avoiding direct overwrite failures on hosts that reject SFTP-backed writes to the live binary path.
 - Fixed recovered tunnel bindings so fallback local ports are persisted and health-checked instead of retrying the stale preferred port.
 - Fixed lease reuse so an existing workspace can re-resolve its own host lease by canonical name, `ssh.host`, or alias.
+- Fixed stale recovered bindings so unresolved or unreachable persisted state is removed instead of blocking future connections.
 
 ## [1.1.0] - 2026-05-06
 

@@ -27,16 +27,19 @@ If you are loading the plugin from a local filesystem path during development, e
 ## Features
 
 - Provider-based host management
-- Host aliases for friendly workspace targets
+- Explicit host selection by configured `name`, real `ssh.host`, or friendly `aliases`
 - SSH bootstrap for the remote stub
+- Hash-checked stub installation that reuses the installed binary when it already matches
 - Plugin-managed SSH tunneling with tracked local tunnel teardown
 - Collision-aware local tunnel port selection
+- Persisted binding recovery with stale-state cleanup after restarts
 - Permission-first path access
 - `once` and persistent `always` approvals per workspace
 - Self-contained remote stub binary
 - Workspace session restore support
 - Shell and command execution endpoints on the remote stub
 - User-facing `remote-switch`, `remote-status`, `remote-disconnect`, and `remote-doctor` tools
+- Lower-level `remote-workspace-create`, `remote-workspace-list`, and `remote-workspace-remove` tools
 - Configurable local `stubBinaryPath` override when auto-discovery is not suitable
 - Live remote lifecycle harness for validating a configured host before relying on interactive use
 - Stub test harness covering auth, permission flow, session restore, and execution behavior
@@ -72,6 +75,7 @@ Recommended public configuration uses the package name:
             "hosts": [
               {
                 "name": "prod-web-1",
+                "aliases": ["web-primary", "prod-app"],
                 "ssh": {
                   "host": "203.0.113.10",
                   "user": "ops",
@@ -100,7 +104,7 @@ The CLI manages package-based plugin config entries in `~/.config/opencode/openc
 
 ### 3. Bootstrap the Remote Stub
 
-Use the setup script to install and start the remote stub on the host:
+Use the setup script to preinstall and start the remote stub on the host:
 
 ```bash
 ./scripts/setup-host.sh 203.0.113.10 ops 22 ~/.ssh/id_ed25519
@@ -119,6 +123,8 @@ What it does **not** do by itself:
 1. It does not permanently attach OpenCode to the remote host.
 2. The runtime connection is established later by the plugin when a workspace is created.
 
+This step is useful for manual preflight work. The normal plugin path also bootstraps or updates the stub when `remote-switch` or workspace creation runs.
+
 ### 4. Connect to a Remote Host
 
 The plugin exposes a convenience tool for the common first-launch path:
@@ -127,7 +133,7 @@ The plugin exposes a convenience tool for the common first-launch path:
 Use the remote-switch tool with provider default and host prod-web-1.
 ```
 
-`remote-switch` resolves the configured host name, `ssh.host`, or alias; ensures the stub is installed and running; creates or recovers the SSH tunnel; verifies remote health; creates a remote workspace/session; and persists the local binding for later recovery.
+`remote-switch` resolves the configured host `name`, real `ssh.host`, or alias; ensures the stub is installed and running; creates or recovers the SSH tunnel; verifies remote health; creates a remote workspace/session; and persists the local binding for later recovery.
 
 You can check or recover current bindings with:
 
@@ -163,7 +169,7 @@ When creating a workspace, specify the `ssh-provider` type and provider/host in 
 
 The plugin will:
 
-1. Resolve the configured host
+1. Resolve the configured host by `name`, `ssh.host`, alias, or provider labels
 2. Ensure the remote stub is installed and running
 3. Establish a local SSH tunnel
 4. Verify remote health
@@ -303,7 +309,7 @@ cd plugin
 npm run verify:remote -- --provider default --host prod-web-1
 ```
 
-The harness uses the same provider registry and SSH manager as the plugin. It resolves the host, bootstraps or updates the stub, creates a tunnel, health-checks through the forwarded URL, creates a workspace/session, verifies the permission flow with a shell command, and cleans up the test workspace/session/tunnel.
+The harness uses the same provider registry and SSH manager as the plugin. It resolves the host by `name`, `ssh.host`, or alias; bootstraps or updates the stub; creates a tunnel; health-checks through the forwarded URL; creates a workspace/session; verifies the permission flow with a shell command; and cleans up the test workspace/session/tunnel.
 
 If you want to verify the stub manually after setup:
 
@@ -319,7 +325,9 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:39300/global/health
 2. The current build/test flow for this repository uses `CGO_ENABLED=0` when targeting those older hosts.
 3. Some older hosts do not keep a backgrounded process alive reliably with a plain remote `nohup ... &` launch.
 4. `setup-host.sh` now starts the stub in its own session from the Python launcher so older systems are less likely to kill it when the bootstrap SSH process exits.
-5. Password-only SSH hosts are supported for bootstrap:
+5. Plugin bootstrap compares the local and remote stub hashes before upload, so a healthy matching binary is reused instead of overwritten.
+6. Persisted bindings are recovered through the forwarded health endpoint; bindings that cannot be resolved or reached are removed from local state so they do not block a future connection.
+7. Password-only SSH hosts are supported for bootstrap:
    - if `sshpass` is installed locally, the script can install the generated key automatically
    - otherwise, the script prints exact manual `authorized_keys` setup steps
 
