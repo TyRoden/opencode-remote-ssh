@@ -146,34 +146,13 @@ ssh_cmd() {
     ssh $SSH_OPTS "$USER@$HOST" "$@"
 }
 
+# Launch the stub in its own session with pure POSIX shell.
+# The previous launcher used `python2 ... || python` with two heredocs on one
+# line: on python3-only hosts (python2 absent) the first heredoc consumed the
+# whole script, the fallback ran with empty stdin, and the launch silently
+# succeeded without starting the stub.
 start_stub_remote() {
-    ssh_cmd "python2 - <<'PY' 2>/dev/null || python - <<'PY'
-import os
-import subprocess
-import time
-
-null_in = open('/dev/null', 'rb')
-null_out = open('/dev/null', 'ab')
-cmd = [
-    '$REMOTE_BASE/bin/opencode-remote-stub',
-    '--listen', '127.0.0.1:39217',
-    '--token-file', '$REMOTE_BASE/run/stub.token',
-    '--state-dir', '$REMOTE_BASE/state',
-    '--log-file', '$REMOTE_BASE/log/stub.log',
-]
-proc = subprocess.Popen(
-    cmd,
-    stdin=null_in,
-    stdout=null_out,
-    stderr=null_out,
-    close_fds=True,
-    preexec_fn=os.setsid,
-)
-time.sleep(2)
-import sys
-sys.exit(0 if proc.poll() is None else 1)
-PY"
-    sleep 2
+    ssh_cmd "( setsid $REMOTE_BASE/bin/opencode-remote-stub --listen 127.0.0.1:39217 --token-file $REMOTE_BASE/run/stub.token --state-dir $REMOTE_BASE/state --log-file $REMOTE_BASE/log/stub.log </dev/null >/dev/null 2>&1 & echo \$! > $REMOTE_BASE/run/stub.pid ) ; sleep 2 ; kill -0 \"\$(cat $REMOTE_BASE/run/stub.pid)\" 2>/dev/null"
 }
 
 cleanup() {

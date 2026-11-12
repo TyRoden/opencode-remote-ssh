@@ -6,10 +6,10 @@ CONFIG_FILE="${CONFIG_FILE:-$DEFAULT_CONFIG_FILE}"
 PLUGIN_NAME="opencode-remote-provider"
 
 usage() {
-    echo "opencode-remote-ssh CLI - Manage package-based remote plugin config"
+    echo "opencode-remote-ssh CLI - Manage the remote plugin entry in the OpenCode V2 config"
     echo ""
-    echo "Supported mode: package-based plugin registration only"
-    echo "Unsupported for automatic mutation: local path-based plugin entries"
+    echo "Supports the OpenCode V2 'plugins' array: package-name entries"
+    echo "and local path-based plugin entries (e.g. a checkout of this repo)"
     echo ""
     echo "Usage: $0 <command> [options]"
     echo ""
@@ -25,13 +25,6 @@ usage() {
 die() {
     echo "ERROR: $*" >&2
     exit 1
-}
-
-read_config() {
-    if [ ! -f "$CONFIG_FILE" ]; then
-        die "OpenCode config not found at $CONFIG_FILE"
-    fi
-    cat "$CONFIG_FILE"
 }
 
 backup_config() {
@@ -62,22 +55,16 @@ plugin_name = os.environ["PLUGIN_NAME"]
 with open(config_file) as f:
     data = json.load(f)
 
-plugins = data.get("plugin", [])
-package_entry = False
-path_entries = []
-for entry in plugins:
-    if isinstance(entry, list) and entry:
-        target = entry[0]
-        if target == plugin_name:
-            package_entry = True
-        elif isinstance(target, str) and ("/plugin" in target or target.endswith("/plugin") or target.endswith("\\plugin")):
-            path_entries.append(target)
-
-if path_entries and not package_entry:
-    print("Detected a local path-based plugin registration.", file=sys.stderr)
-    print("This CLI only manages package-based plugin config entries for 'opencode-remote-provider'.", file=sys.stderr)
-    print("Edit your path-based config manually or switch to package-based plugin registration.", file=sys.stderr)
-    sys.exit(2)
+legacy = data.get("plugin", [])
+for entry in legacy:
+    if isinstance(entry, list) and entry and (
+        entry[0] == plugin_name or (isinstance(entry[0], str) and entry[0].endswith("opencode-remote-ssh/plugin"))
+    ):
+        print("Detected a legacy OpenCode V1 'plugin' entry for this plugin.", file=sys.stderr)
+        print("OpenCode 2.x uses the 'plugins' array with object entries:", file=sys.stderr)
+        print('  "plugins": [{"package": "<name-or-path>", "options": {...}}]', file=sys.stderr)
+        print("Convert that entry and rerun this CLI.", file=sys.stderr)
+        sys.exit(2)
 PY
 }
 
@@ -90,48 +77,59 @@ import sys
 with open(os.path.expanduser(os.environ["CONFIG_FILE"])) as f:
     data = json.load(f)
 
-for entry in data.get("plugin", []):
-    if isinstance(entry, list) and entry and entry[0] == os.environ["PLUGIN_NAME"]:
-        sys.exit(0)
-sys.exit(1)
-PY
-}
+def is_remote(entry):
+    if isinstance(entry, str):
+        return entry == os.environ["PLUGIN_NAME"] or entry.endswith("opencode-remote-ssh/plugin")
+    if isinstance(entry, dict):
+        package = entry.get("package")
+        if isinstance(package, str):
+            return package == os.environ["PLUGIN_NAME"] or package.endswith("opencode-remote-ssh/plugin")
+    return False
 
-get_plugin_config() {
-    python3 - <<'PY'
-import json
-import os
-
-with open(os.path.expanduser(os.environ["CONFIG_FILE"])) as f:
-    data = json.load(f)
-
-for entry in data.get("plugin", []):
-    if isinstance(entry, list) and len(entry) >= 2 and entry[0] == os.environ["PLUGIN_NAME"]:
-        print(json.dumps(entry[1]))
-        break
-else:
-    print(json.dumps({}))
+sys.exit(0 if any(is_remote(entry) for entry in data.get("plugins", [])) else 1)
 PY
 }
 
 init_plugin() {
-    local config="$1"
-    local plugin_config='{"providers":{}}'
+    if [ ! -f "$CONFIG_FILE" ]; then
+        die "OpenCode config not found at $CONFIG_FILE"
+    fi
 
-    echo "$config" | python3 - <<'PY' | write_config
+    # The npm package is not published, so the entry points at the plugin
+    # directory of this checkout.
+    local plugin_dir
+    plugin_dir="$(cd "$(dirname "$0")/.." && pwd)/plugin"
+
+    PLUGIN_DIR="$plugin_dir" python3 - <<'PY' | write_config
 import json
-import sys
+import os
 
-plugin_name = __import__("os").environ["PLUGIN_NAME"]
-data = json.load(sys.stdin)
-plugins = data.setdefault("plugin", [])
+plugin_name = os.environ["PLUGIN_NAME"]
+plugin_dir = os.environ["PLUGIN_DIR"]
 
-for entry in plugins:
-    if isinstance(entry, list) and entry and entry[0] == plugin_name:
-        print(json.dumps(data, indent=2))
-        raise SystemExit
+with open(os.path.expanduser(os.environ["CONFIG_FILE"])) as f:
+    data = json.load(f)
 
-plugins.append([plugin_name, {"providers": {}}])
+plugins = data.setdefault("plugins", [])
+
+def is_remote(entry):
+    pkg = entry if isinstance(entry, str) else (
+        entry.get("package") if isinstance(entry, dict) else None
+    )
+    if not isinstance(pkg, str):
+        return False
+    if pkg == plugin_name or pkg.endswith("opencode-remote-ssh/plugin"):
+        return True
+    manifest = os.path.join(pkg, "package.json")
+    if os.path.isfile(manifest):
+        try:
+            return json.load(open(manifest)).get("name") == plugin_name
+        except Exception:
+            return False
+    return False
+
+if not any(is_remote(entry) for entry in plugins):
+    plugins.append({"package": plugin_dir, "options": {"providers": {}}})
 print(json.dumps(data, indent=2))
 PY
     echo "Plugin initialized"
@@ -148,12 +146,13 @@ cmd_add() {
     local identity="${5:-}"
 
     if ! has_plugin; then
-        init_plugin "$(read_config)"
+        init_plugin
     fi
 
     python3 - <<'PY' | write_config
 import json
 import os
+import sys
 
 config_file = os.path.expanduser(os.environ["CONFIG_FILE"])
 plugin_name = os.environ["PLUGIN_NAME"]
@@ -162,31 +161,56 @@ host = os.environ["REMOTE_HOST"]
 user = os.environ["REMOTE_USER"]
 port = int(os.environ["REMOTE_PORT"])
 identity = os.environ.get("REMOTE_IDENTITY", "")
+ssh_host = os.environ.get("REMOTE_SSH_HOST", host)
 
 with open(config_file) as f:
     data = json.load(f)
 
-for entry in data.get("plugin", []):
-    if isinstance(entry, list) and entry and entry[0] == plugin_name:
-        plugin = entry[1] if len(entry) > 1 else {}
-        entry[1] = plugin
-        providers = plugin.setdefault("providers", {})
-        provider_config = providers.setdefault(provider, {"strategy": "first_available", "hosts": []})
-        hosts = [item for item in provider_config.setdefault("hosts", []) if item.get("name") != host]
-        ssh_host = os.environ.get("REMOTE_SSH_HOST", host)
-        host_entry = {
-            "name": host,
-            "ssh": {
-                "host": ssh_host,
-                "user": user,
-                "port": port,
-            },
-        }
-        if identity:
-            host_entry["ssh"]["identityFile"] = identity
-        hosts.append(host_entry)
-        provider_config["hosts"] = hosts
-        break
+plugins = data.setdefault("plugins", [])
+
+def find_entry():
+    for entry in plugins:
+        pkg = entry if isinstance(entry, str) else (
+            entry.get("package") if isinstance(entry, dict) else None
+        )
+        if not isinstance(pkg, str):
+            continue
+        if pkg == plugin_name or pkg.endswith("opencode-remote-ssh/plugin"):
+            return entry
+        manifest = os.path.join(pkg, "package.json")
+        if os.path.isfile(manifest):
+            try:
+                if json.load(open(manifest)).get("name") == plugin_name:
+                    return entry
+            except Exception:
+                pass
+    return None
+
+entry = find_entry()
+if entry is None:
+    print(f"Remote plugin entry not found in {config_file}. Run 'init' first.", file=sys.stderr)
+    raise SystemExit(1)
+if isinstance(entry, str):
+    index = plugins.index(entry)
+    entry = {"package": entry, "options": {}}
+    plugins[index] = entry
+
+options = entry.setdefault("options", {})
+providers = options.setdefault("providers", {})
+provider_config = providers.setdefault(provider, {"strategy": "first_available", "hosts": []})
+hosts = [item for item in provider_config.setdefault("hosts", []) if item.get("name") != host]
+host_entry = {
+    "name": host,
+    "ssh": {
+        "host": ssh_host,
+        "user": user,
+        "port": port,
+    },
+}
+if identity:
+    host_entry["ssh"]["identityFile"] = identity
+hosts.append(host_entry)
+provider_config["hosts"] = hosts
 
 print(json.dumps(data, indent=2))
 PY
@@ -213,12 +237,31 @@ host = os.environ["REMOTE_HOST"]
 with open(config_file) as f:
     data = json.load(f)
 
-for entry in data.get("plugin", []):
-    if isinstance(entry, list) and entry and entry[0] == plugin_name:
-        plugin = entry[1] if len(entry) > 1 else {}
-        providers = plugin.get("providers", {})
+plugins = data.get("plugins", [])
+
+def is_remote(entry):
+    pkg = entry if isinstance(entry, str) else (
+        entry.get("package") if isinstance(entry, dict) else None
+    )
+    if not isinstance(pkg, str):
+        return False
+    if pkg == plugin_name or pkg.endswith("opencode-remote-ssh/plugin"):
+        return True
+    manifest = os.path.join(pkg, "package.json")
+    if os.path.isfile(manifest):
+        try:
+            return json.load(open(manifest)).get("name") == plugin_name
+        except Exception:
+            return False
+    return False
+
+for entry in plugins:
+    if is_remote(entry) and isinstance(entry, dict):
+        providers = (entry.get("options") or {}).get("providers", {})
         if provider in providers:
-            providers[provider]["hosts"] = [item for item in providers[provider].get("hosts", []) if item.get("name") != host]
+            providers[provider]["hosts"] = [
+                item for item in providers[provider].get("hosts", []) if item.get("name") != host
+            ]
         break
 
 print(json.dumps(data, indent=2))
@@ -233,21 +276,38 @@ cmd_list() {
         return
     fi
 
-    CONFIG_FILE_VALUE="$CONFIG_FILE" PLUGIN_NAME_VALUE="$PLUGIN_NAME" python3 - <<'PY'
+    python3 - <<'PY'
 import json
 import os
-import sys
 
-with open(os.path.expanduser(os.environ["CONFIG_FILE_VALUE"])) as f:
+with open(os.path.expanduser(os.environ["CONFIG_FILE"])) as f:
     data = json.load(f)
 
-plugin = {}
-for entry in data.get("plugin", []):
-    if isinstance(entry, list) and len(entry) >= 2 and entry[0] == os.environ["PLUGIN_NAME_VALUE"]:
-        plugin = entry[1]
+plugin_name = os.environ["PLUGIN_NAME"]
+
+def is_remote(entry):
+    pkg = entry if isinstance(entry, str) else (
+        entry.get("package") if isinstance(entry, dict) else None
+    )
+    if not isinstance(pkg, str):
+        return False
+    if pkg == plugin_name or pkg.endswith("opencode-remote-ssh/plugin"):
+        return True
+    manifest = os.path.join(pkg, "package.json")
+    if os.path.isfile(manifest):
+        try:
+            return json.load(open(manifest)).get("name") == plugin_name
+        except Exception:
+            return False
+    return False
+
+options = {}
+for entry in data.get("plugins", []):
+    if is_remote(entry) and isinstance(entry, dict):
+        options = entry.get("options") or {}
         break
 
-providers = plugin.get("providers", {})
+providers = options.get("providers", {})
 if not providers:
     print("No providers configured")
 
@@ -284,7 +344,7 @@ cmd_init() {
         echo "Plugin already initialized"
         return
     fi
-    init_plugin "$(read_config)"
+    init_plugin
 }
 
 if [ $# -lt 1 ]; then
