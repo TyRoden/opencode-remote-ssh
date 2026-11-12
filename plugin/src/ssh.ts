@@ -524,19 +524,29 @@ export class SSHManager {
   }
 
   private buildRemoteStartCommand(installRoot: string, remotePort: number): string {
+    // Launch the stub in its own session (setsid) so sshd's session teardown
+    // (SIGHUP/SIGTERM/SIGKILL to the session process group when the connection
+    // closes) cannot kill it. The subshell guarantees setsid's caller is not
+    // itself a session leader, which util-linux setsid refuses to detach.
+    // The stub's PID is recorded and probed with `kill -0` so an immediate
+    // startup failure is reported here; the tunnel health check that follows
+    // in bootstrap remains the authoritative verification.
+    //
+    // Replaces the previous `python2 ... || python ...` double-heredoc launch:
+    // when python2 is absent (python3-only hosts), the first heredoc consumes
+    // the entire script and the fallback interpreter receives empty stdin, so
+    // the stub silently never started while the command reported success.
+    const stubBinary = `${installRoot}/bin/opencode-remote-stub`;
+    const pidFile = `${installRoot}/run/stub.pid`;
     return [
-      "python2 - <<'PY' 2>/dev/null || python - <<'PY'",
-      "import os",
-      "import subprocess",
-      "import time",
-      "import sys",
-      "null_in = open('/dev/null', 'rb')",
-      "null_out = open('/dev/null', 'ab')",
-      `cmd = ['${installRoot}/bin/opencode-remote-stub', '--listen', '127.0.0.1:${remotePort}', '--token-file', '${installRoot}/run/stub.token', '--state-dir', '${installRoot}/state', '--log-file', '${installRoot}/log/stub.log']`,
-      "proc = subprocess.Popen(cmd, stdin=null_in, stdout=null_out, stderr=null_out, close_fds=True, preexec_fn=os.setsid)",
-      "time.sleep(2)",
-      "sys.exit(0 if proc.poll() is None else 1)",
-      "PY",
-    ].join("\n");
+      `( setsid '${stubBinary}'`,
+      `--listen 127.0.0.1:${remotePort}`,
+      `--token-file '${installRoot}/run/stub.token'`,
+      `--state-dir '${installRoot}/state'`,
+      `--log-file '${installRoot}/log/stub.log'`,
+      `</dev/null >/dev/null 2>&1 & echo $! > '${pidFile}' )`,
+      `; sleep 2`,
+      `; kill -0 "$(cat '${pidFile}')" 2>/dev/null`,
+    ].join(" ");
   }
 }

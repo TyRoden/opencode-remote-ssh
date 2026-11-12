@@ -9,20 +9,27 @@ Provider-based remote workspace plugin and Go stub for using OpenCode against Li
 `opencode-remote-ssh` lets OpenCode work against remote Linux machines over SSH.
 The system has two parts:
 
-1. A local OpenCode plugin that resolves configured hosts, manages SSH bootstrap, and exposes a remote workspace target.
+1. A local OpenCode plugin that resolves configured hosts, manages SSH bootstrap, and exposes the remote workspace tools.
 2. A small Go stub installed on the remote host that serves an OpenCode-compatible API over an SSH tunnel.
 
-## Supported Modes
+## Loading the Plugin
 
-There are two ways to load the plugin in your local OpenCode config:
+OpenCode 2.x registers plugins through the `"plugins"` array in `opencode.json`, using object entries:
 
-1. Package-based plugin registration
-2. Path-based local development registration
+```json
+{
+  "plugins": [
+    {
+      "package": "<name-or-path>",
+      "options": { ... }
+    }
+  ]
+}
+```
 
-The public, automated path in this repository is **package-based registration**.
+`package` may be an npm package name or a local filesystem path. The `opencode-remote-provider` npm package has not been published, so loading the plugin from a local checkout of this repository is the only supported way at this time.
 
-The helper CLI `scripts/opencode-remote-cli.sh` only manages **package-based** plugin config entries.
-If you are loading the plugin from a local filesystem path during development, edit your config manually.
+The helper CLI `scripts/opencode-remote-cli.sh` manages the plugin entry in the `plugins` array — both package-name entries and local-path entries.
 
 ## Features
 
@@ -61,14 +68,14 @@ If the plugin cannot find the stub binary automatically, set `stubBinaryPath` in
 
 ### 1. Configure the Plugin
 
-Recommended public configuration uses the package name:
+The plugin is loaded from a local checkout of this repository:
 
 ```json
 {
-  "plugin": [
-    [
-      "opencode-remote-provider",
-      {
+  "plugins": [
+    {
+      "package": "/absolute/path/to/opencode-remote-ssh/plugin",
+      "options": {
         "providers": {
           "default": {
             "strategy": "first_available",
@@ -88,14 +95,14 @@ Recommended public configuration uses the package name:
           }
         }
       }
-    ]
+    }
   ]
 }
 ```
 
 ### 2. Add Hosts with the CLI
 
-The CLI manages package-based plugin config entries in `~/.config/opencode/opencode.json`.
+The CLI manages the remote plugin entry in the `plugins` array of `~/.config/opencode/opencode.json`.
 
 ```bash
 ./scripts/opencode-remote-cli.sh add default prod-web-1 ops 22 ~/.ssh/id_ed25519
@@ -155,25 +162,21 @@ Use the remote-disconnect tool.
 
 ### 5. Create a Remote Workspace Directly
 
-When creating a workspace, specify the `ssh-provider` type and provider/host in `extra`:
+Prefer `remote-switch` when you want the active session to move to the remote host. To create a workspace binding without switching the session, use the lower-level tool:
 
-```json
-{
-  "type": "ssh-provider",
-  "extra": {
-    "provider": "default",
-    "host": "prod-web-1"
-  }
-}
+```text
+Use the remote-workspace-create tool with provider default and host prod-web-1.
 ```
 
 The plugin will:
 
-1. Resolve the configured host by `name`, `ssh.host`, alias, or provider labels
+1. Resolve the configured host by `name`, `ssh.host`, or alias
 2. Ensure the remote stub is installed and running
 3. Establish a local SSH tunnel
 4. Verify remote health
-5. Return the remote workspace target to OpenCode
+5. Persist the local binding for later recovery
+
+Existing bindings can be inspected with `remote-workspace-list` and removed with `remote-workspace-remove`.
 
 ## CLI Commands
 
@@ -188,37 +191,16 @@ The plugin will:
 Notes:
 
 1. The CLI creates timestamped backups of `~/.config/opencode/opencode.json` before modifying it.
-2. The CLI only supports package-based plugin entries.
-3. If your config uses a local filesystem path to load the plugin, manage that config block manually.
+2. The CLI supports both bare package-name entries and local-path entries in the `plugins` array; bare string entries are promoted to object form when options are added.
+3. The CLI rejects legacy OpenCode V1 `plugin` entries and prints the V2 shape to use instead.
 
-## Local Development Mode
+## Local Checkouts
 
-If you are developing this repository locally, you may point OpenCode at the plugin source directory directly.
+Because the npm package has not been published, loading from a checkout is the normal setup. The CLI in this repository manages that entry directly:
 
-Example:
-
-```json
-{
-  "plugin": [
-    [
-      "/absolute/path/to/opencode-remote/plugin",
-      {
-        "providers": {
-          "default": {
-            "hosts": []
-          }
-        }
-      }
-    ]
-  ]
-}
-```
-
-In that mode:
-
-1. You are using a path-based local dev setup.
-2. The CLI in this repository will not mutate that plugin config automatically.
-3. Edit the config manually.
+1. `init` appends the entry when it is missing, pointing at the `plugin/` directory of the checkout the CLI was invoked from.
+2. `add`, `remove`, and `list` update and read the entry in place.
+3. Entries that are bare strings (package-name style) are promoted to object form automatically when options are added.
 
 ## Host Aliases
 
@@ -247,27 +229,11 @@ Example:
 }
 ```
 
-Any of these workspace targets now resolve to the same configured host:
+Any of these targets resolves to the same configured host, whether passed to `remote-switch`, `remote-workspace-create`, or `remote-doctor`:
 
-```json
-{
-  "type": "ssh-provider",
-  "extra": {
-    "provider": "default",
-    "host": "prod-web-1"
-  }
-}
-```
-
-```json
-{
-  "type": "ssh-provider",
-  "extra": {
-    "provider": "default",
-    "host": "web-primary"
-  }
-}
-```
+- `prod-web-1` (canonical `name`)
+- `web-primary` (alias)
+- `203.0.113.10` (real `ssh.host`)
 
 ## Permission Model
 
@@ -291,7 +257,8 @@ On the remote host, files are installed under `~/.opencode-remote/`:
 ├── bin/
 │   └── opencode-remote-stub
 ├── run/
-│   └── stub.token
+│   ├── stub.token
+│   └── stub.pid
 ├── log/
 │   └── stub.log
 └── state/
@@ -323,11 +290,10 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:39300/global/health
 
 1. Older hosts such as CentOS/RHEL 7 era systems may require a statically built stub binary.
 2. The current build/test flow for this repository uses `CGO_ENABLED=0` when targeting those older hosts.
-3. Some older hosts do not keep a backgrounded process alive reliably with a plain remote `nohup ... &` launch.
-4. `setup-host.sh` now starts the stub in its own session from the Python launcher so older systems are less likely to kill it when the bootstrap SSH process exits.
-5. Plugin bootstrap compares the local and remote stub hashes before upload, so a healthy matching binary is reused instead of overwritten.
-6. Persisted bindings are recovered through the forwarded health endpoint; bindings that cannot be resolved or reached are removed from local state so they do not block a future connection.
-7. Password-only SSH hosts are supported for bootstrap:
+3. The stub is launched in its own session with pure POSIX `setsid`, so sshd session teardown cannot kill it when the bootstrap SSH connection closes. The previous `python2 || python` Python launcher was removed because it silently no-oped on hosts where only `python3` is installed.
+4. Plugin bootstrap compares the local and remote stub hashes before upload, so a healthy matching binary is reused instead of overwritten.
+5. Persisted bindings are recovered through the forwarded health endpoint; bindings that cannot be resolved or reached are removed from local state so they do not block a future connection.
+6. Password-only SSH hosts are supported for bootstrap:
    - if `sshpass` is installed locally, the script can install the generated key automatically
    - otherwise, the script prints exact manual `authorized_keys` setup steps
 

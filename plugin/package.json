@@ -1,23 +1,23 @@
 {
   "name": "opencode-remote-provider",
-  "version": "1.1.5",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node dist/state.test.js",
     "verify:remote": "npm run build && node ../scripts/verify-remote-lifecycle.mjs"
   },
   "dependencies": {
-    "@opencode-ai/plugin": "^1.14.39"
+    "@opencode/plugin": "^2.2.7"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
     "typescript": "^5.8.3"
-  },
-  "oc-plugin": [
-    "workspace-adaptor"
-  ]
+  }
 }
